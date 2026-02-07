@@ -193,4 +193,6 @@ export interface QQInstallInfo {
     platform: string;
     /** 架构 */
     arch: string;
+    /** 是否为 rootless 模式（QQ 安装在 ~/Napcat/opt/QQ/） */
+    isRootless: boolean;
 }
