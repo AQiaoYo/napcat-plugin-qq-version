@@ -1,15 +1,13 @@
 /**
- * NapCat 插件模板
+ * QQ 版本查询插件
  * 
- * 这是一个通用的 NapCat 插件开发模板，包含：
- * - 插件生命周期管理（init / onmessage / cleanup）
- * - 配置管理（持久化 + WebUI 配置面板）
- * - 消息处理框架（命令解析、CD 冷却、消息段构建）
- * - WebUI API 路由注册（无认证模式）
- * - WebUI 仪表盘页面
- * - 群级别配置管理
+ * 查询推荐的 QQ 版本与下载链接，支持在线更新升级。
+ * 主要功能：
+ * - 获取推荐 QQ 版本信息
+ * - 提供各平台 QQ 下载链接
+ * - WebUI 管理面板
  * 
- * @author Your Name
+ * @author AQiaoYo
  * @license MIT
  */
 
@@ -20,7 +18,6 @@ import { EventType } from 'napcat-types/napcat-onebot/event/index';
 
 import { initConfigUI } from './config';
 import { pluginState } from './core/state';
-import { handleMessage } from './handlers/message-handler';
 import { registerApiRoutes } from './services/api-service';
 import { initVersionInfo } from './services/github-service';
 import type { PluginConfig } from './types';
@@ -70,14 +67,14 @@ const plugin_init = async (ctx: NapCatPluginContext) => {
             // 注册 API 路由（无认证）
             registerApiRoutes(ctx);
 
-            // 注册仪表盘页面
+            // 注册配置页面
             if (router && router.page) {
                 router.page({
-                    path: 'plugin-dashboard',
-                    title: '插件仪表盘',
-                    icon: '🔌',
+                    path: 'plugin-config',
+                    title: 'QQ 安装管理',
+                    icon: '�',
                     htmlFile: 'webui/index.html',
-                    description: '插件管理控制台'
+                    description: '管理 QQ 版本下载与安装'
                 });
             }
         } catch (e) {
@@ -95,12 +92,8 @@ const plugin_init = async (ctx: NapCatPluginContext) => {
  * 当收到消息时触发
  */
 const plugin_onmessage = async (ctx: NapCatPluginContext, event: OB11Message) => {
-    // 检查插件是否启用
-    if (!pluginState.config.enabled) return;
-    // 只处理消息事件
-    if (event.post_type !== EventType.MESSAGE || !event.raw_message) return;
-    // 调用消息处理器
-    await handleMessage(ctx, event);
+    // 插件现在仅通过 WebUI 操作，不再处理聊天指令
+    return;
 };
 
 /**

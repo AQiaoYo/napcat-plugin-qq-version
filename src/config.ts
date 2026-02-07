@@ -8,11 +8,7 @@ import type { PluginConfig } from './types';
 
 /** 默认配置 */
 export const DEFAULT_CONFIG: PluginConfig = {
-    enabled: true,
     debug: false,
-    commandPrefix: '#qqver',
-    cooldownSeconds: 60,
-    groupConfigs: {},
 };
 
 /**
@@ -32,18 +28,12 @@ export function initConfigUI(ctx: NapCatPluginContext) {
         // 插件信息头部
         ctx.NapCatConfig.html(`
             <div style="padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; margin-bottom: 20px; color: white;">
-                <h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: bold;">� QQ 版本查询插件</h3>
+                <h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: bold;">QQ 版本查询插件</h3>
                 <p style="margin: 0; font-size: 14px; opacity: 0.9;">自动获取与当前 NapCat 版本匹配的 QQ 版本下载链接</p>
             </div>
         `),
-        // 全局开关
-        ctx.NapCatConfig.boolean('enabled', '启用插件', true, '是否启用此插件的功能'),
         // 调试模式
-        ctx.NapCatConfig.boolean('debug', '调试模式', false, '启用后将输出详细的调试日志'),
-        // 命令前缀
-        ctx.NapCatConfig.text('commandPrefix', '命令前缀', '#qqver', '触发命令的前缀，默认为 #qqver'),
-        // 冷却时间
-        ctx.NapCatConfig.number('cooldownSeconds', '冷却时间（秒）', 60, '同一命令请求冷却时间，0 表示不限制')
+        ctx.NapCatConfig.boolean('debug', '调试模式', false, '启用后将输出详细的调试日志')
     );
 
     return schema;
@@ -55,6 +45,5 @@ export function initConfigUI(ctx: NapCatPluginContext) {
 export function getDefaultConfig(): PluginConfig {
     return {
         ...DEFAULT_CONFIG,
-        groupConfigs: {},
     };
 }
