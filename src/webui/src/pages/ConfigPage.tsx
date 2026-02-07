@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { noAuthFetch } from '../utils/api'
 import { showToast } from '../hooks/useToast'
 import type { PluginConfig } from '../types'
-import { IconTerminal } from '../components/icons'
+import { IconSettings, IconTerminal } from '../components/icons'
 
 export default function ConfigPage() {
     const [config, setConfig] = useState<PluginConfig | null>(null)
@@ -44,104 +44,52 @@ export default function ConfigPage() {
 
     if (!config) {
         return (
-            <div className="flex items-center justify-center h-64 empty-state">
+            <div className="flex items-center justify-center h-64">
                 <div className="flex flex-col items-center gap-3">
-                    <div className="loading-spinner text-primary" />
-                    <div className="text-gray-400 text-sm">加载配置中...</div>
+                    <div className="loading-spinner !w-6 !h-6 text-brand-500" />
+                    <span className="text-xs text-gray-400">加载配置中...</span>
                 </div>
             </div>
         )
     }
 
     return (
-        <div className="space-y-6 stagger-children">
-            {/* 基础配置 */}
-            <div className="card p-5 hover-lift">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-5">
-                    <IconTerminal size={16} className="text-gray-400" />
-                    基础配置
-                </h3>
-                <div className="space-y-5">
-                    <ToggleRow
-                        label="启用插件"
-                        desc="全局开关，关闭后不响应任何命令"
-                        checked={config.enabled}
-                        onChange={(v) => updateField('enabled', v)}
-                    />
-                    <ToggleRow
-                        label="调试模式"
-                        desc="启用后输出详细日志到控制台"
-                        checked={config.debug}
-                        onChange={(v) => updateField('debug', v)}
-                    />
-                    <InputRow
-                        label="命令前缀"
-                        desc="触发命令的前缀"
-                        value={config.commandPrefix}
-                        onChange={(v) => updateField('commandPrefix', v)}
-                    />
-                    <InputRow
-                        label="冷却时间 (秒)"
-                        desc="同一命令请求冷却时间，0 表示不限制"
-                        value={String(config.cooldownSeconds)}
-                        type="number"
-                        onChange={(v) => updateField('cooldownSeconds', Number(v) || 0)}
-                    />
-                    {/* TODO: 在这里添加你的配置项 */}
+        <div className="space-y-5">
+            <div className="rounded-xl border border-gray-200/70 dark:border-white/[0.06] bg-white dark:bg-white/[0.03] overflow-hidden">
+                {/* 卡片头 */}
+                <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-gray-100 dark:border-white/[0.04]">
+                    <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-500 dark:text-gray-400">
+                        <IconSettings size={14} />
+                    </div>
+                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">基础配置</span>
+                </div>
+
+                {/* 配置项 */}
+                <div className="divide-y divide-gray-100 dark:divide-white/[0.04]">
+                    <div className="flex items-center justify-between px-5 py-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-violet-50 dark:bg-violet-500/10 flex items-center justify-center text-violet-500">
+                                <IconTerminal size={15} />
+                            </div>
+                            <div>
+                                <div className="text-sm font-medium text-gray-800 dark:text-gray-200">调试模式</div>
+                                <div className="text-xs text-gray-400 mt-0.5">启用后输出详细日志到控制台</div>
+                            </div>
+                        </div>
+                        <label className="toggle">
+                            <input type="checkbox" checked={config.debug} onChange={(e) => updateField('debug', e.target.checked)} />
+                            <div className="slider" />
+                        </label>
+                    </div>
                 </div>
             </div>
 
             {saving && (
-                <div className="saving-indicator fixed bottom-4 right-4 bg-primary text-white text-xs px-3 py-2 rounded-lg shadow-lg flex items-center gap-2">
-                    <div className="loading-spinner !w-3 !h-3 !border-[1.5px]" />
+                <div className="fixed bottom-4 right-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-brand-500 text-white text-xs font-medium shadow-lg shadow-brand-500/20 animate-pulse">
+                    <div className="loading-spinner !w-3 !h-3 !border-[1.5px] !border-white !border-t-transparent" />
                     保存中...
                 </div>
             )}
-        </div>
-    )
-}
-
-/* ---- 子组件 ---- */
-
-function ToggleRow({ label, desc, checked, onChange }: {
-    label: string; desc: string; checked: boolean; onChange: (v: boolean) => void
-}) {
-    return (
-        <div className="flex items-center justify-between">
-            <div>
-                <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{label}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{desc}</div>
-            </div>
-            <label className="toggle">
-                <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-                <div className="slider" />
-            </label>
-        </div>
-    )
-}
-
-function InputRow({ label, desc, value, type = 'text', onChange }: {
-    label: string; desc: string; value: string; type?: string; onChange: (v: string) => void
-}) {
-    const [local, setLocal] = useState(value)
-    useEffect(() => { setLocal(value) }, [value])
-
-    const handleBlur = () => {
-        if (local !== value) onChange(local)
-    }
-
-    return (
-        <div>
-            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">{label}</div>
-            <div className="text-xs text-gray-400 mb-2">{desc}</div>
-            <input
-                className="input-field"
-                type={type}
-                value={local}
-                onChange={(e) => setLocal(e.target.value)}
-                onBlur={handleBlur}
-                onKeyDown={(e) => e.key === 'Enter' && handleBlur()}
-            />
         </div>
     )
 }

@@ -214,3 +214,134 @@ export function IconPackage({ size, className }: IconProps = defaultProps) {
         </svg>
     )
 }
+
+/** Windows 图标 */
+export function IconWindows({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+            <path d="M3 5.548l7.065-.966v6.822H3V5.548zm0 12.904l7.065.966v-6.822H3v5.856zm7.834 1.073L21 21V12.596h-10.166v6.929zm0-14.05v7.029H21V3L10.834 5.475z" />
+        </svg>
+    )
+}
+
+/** Linux 图标 */
+export function IconLinux({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+            <path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.368 1.884 1.43.868.07 1.723-.26 2.456-.594.733-.34 1.455-.678 2.186-.78.714-.098 1.315.066 1.626.6.06.104.123.21.192.315.308.858.556 1.512 1.078 1.647.286.075.6-.04.87-.207.27-.17.51-.393.677-.585.167-.192.306-.374.395-.495.089-.12.145-.164.145-.164a.425.425 0 00-.063-.58.443.443 0 00-.58.063s-.04.03-.11.13c-.07.1-.174.25-.322.414-.296.328-.726.676-1.017.596-.26-.073-.46-.502-.756-1.333-.15-.41-.34-.83-.6-1.2-.26-.333-.6-.666-1.11-.834-.516-.167-1.147-.106-1.716-.002l-.003.003c-.7.1-1.455.468-2.19.81-.735.34-1.478.6-2.084.557-.538-.043-1.063-.44-1.37-1.03-.024-.05-.05-.1-.073-.15.27-.02.517-.14.742-.336.456-.4.82-1.1.96-2.037.034-.134.07-.333.07-.6 0-.2-.04-.4-.134-.6-.19-.4-.543-.533-.855-.67-.312-.133-.66-.2-.862-.4-.213-.24-.39-.56-.65-.84a.432.432 0 00-.106-.132c.12-.8-.01-1.642-.287-2.47-.59-1.77-1.83-3.47-2.716-4.52-.75-1.067-.974-1.928-1.05-3.02-.066-1.49 1.057-5.965-3.17-6.298C12.82.008 12.66 0 12.504 0z" />
+        </svg>
+    )
+}
+
+/** macOS/Apple 图标 */
+export function IconApple({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
+        </svg>
+    )
+}
+
+/** 服务器 */
+export function IconServer({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <rect width="20" height="8" x="2" y="2" rx="2" ry="2" />
+            <rect width="20" height="8" x="2" y="14" rx="2" ry="2" />
+            <line x1="6" x2="6.01" y1="6" y2="6" />
+            <line x1="6" x2="6.01" y1="18" y2="18" />
+        </svg>
+    )
+}
+
+/** 文件夹 */
+export function IconFolder({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
+        </svg>
+    )
+}
+
+/** 标签 */
+export function IconTag({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
+            <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
+        </svg>
+    )
+}
+
+/** CPU/处理器 */
+export function IconCpu({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+            <rect x="9" y="9" width="6" height="6" />
+            <path d="M15 2v2" /><path d="M15 20v2" /><path d="M2 15h2" /><path d="M2 9h2" />
+            <path d="M20 15h2" /><path d="M20 9h2" /><path d="M9 2v2" /><path d="M9 20v2" />
+        </svg>
+    )
+}
+
+/** 外部链接 */
+export function IconExternalLink({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="M15 3h6v6" />
+            <path d="M10 14 21 3" />
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+        </svg>
+    )
+}
+
+/** 盾牌/安全 */
+export function IconShield({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+        </svg>
+    )
+}
+
+/** 箭头右 */
+export function IconArrowRight({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="M5 12h14" />
+            <path d="m12 5 7 7-7 7" />
+        </svg>
+    )
+}
+
+/** 圆形勾选 */
+export function IconCheckCircle({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <path d="m9 11 3 3L22 4" />
+        </svg>
+    )
+}
+
+/** 圆形X */
+export function IconXCircle({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <circle cx="12" cy="12" r="10" />
+            <path d="m15 9-6 6" />
+            <path d="m9 9 6 6" />
+        </svg>
+    )
+}
+
+/** 重置/撤销 */
+export function IconRotateCcw({ size, className }: IconProps = defaultProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+        </svg>
+    )
+}

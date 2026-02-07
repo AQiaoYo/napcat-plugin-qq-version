@@ -2,9 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { noAuthFetch } from '../utils/api'
 import { showToast } from '../hooks/useToast'
 import type { QQInstallInfo, InstallProgress, VersionRecommended, QQDownloadLink } from '../types'
-import { IconDownload, IconRefresh, IconCheck, IconAlert, IconInfo } from '../components/icons'
+import {
+    IconDownload, IconRefresh, IconAlert, IconPackage,
+    IconWindows, IconLinux, IconApple, IconServer, IconFolder, IconTag, IconCpu,
+    IconExternalLink, IconCheckCircle, IconXCircle, IconRotateCcw
+} from '../components/icons'
 
-/** 格式化字节 */
+/* ==================== 工具函数 ==================== */
+
 function formatBytes(bytes: number): string {
     if (!bytes || bytes === 0) return '0 B'
     const k = 1024
@@ -13,13 +18,11 @@ function formatBytes(bytes: number): string {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
-/** 格式化速度 */
 function formatSpeed(bytesPerSec: number): string {
     if (!bytesPerSec || bytesPerSec <= 0) return '-'
     return formatBytes(bytesPerSec) + '/s'
 }
 
-/** 平台标签 */
 function platformLabel(p: string): string {
     switch (p) {
         case 'windows': return 'Windows'
@@ -29,12 +32,15 @@ function platformLabel(p: string): string {
     }
 }
 
-/** 格式标签 */
-function formatLabel(f: string): string {
-    return f.toUpperCase()
+function PlatformIcon({ platform, size = 16, className = '' }: { platform: string; size?: number; className?: string }) {
+    switch (platform) {
+        case 'windows': case 'win32': return <IconWindows size={size} className={className} />
+        case 'linux': return <IconLinux size={size} className={className} />
+        case 'mac': case 'darwin': return <IconApple size={size} className={className} />
+        default: return <IconServer size={size} className={className} />
+    }
 }
 
-/** 阶段中文描述 */
 function stageLabel(stage: string): string {
     switch (stage) {
         case 'idle': return '就绪'
@@ -47,19 +53,17 @@ function stageLabel(stage: string): string {
     }
 }
 
-/** 阶段颜色 */
 function stageColor(stage: string): string {
     switch (stage) {
-        case 'downloading': return 'text-blue-500'
-        case 'extracting': return 'text-amber-500'
-        case 'installing': return 'text-violet-500'
-        case 'done': return 'text-emerald-500'
-        case 'error': return 'text-red-500'
-        default: return 'text-gray-400'
+        case 'downloading': return 'text-blue-600 dark:text-blue-400'
+        case 'extracting': return 'text-amber-600 dark:text-amber-400'
+        case 'installing': return 'text-violet-600 dark:text-violet-400'
+        case 'done': return 'text-emerald-600 dark:text-emerald-400'
+        case 'error': return 'text-red-600 dark:text-red-400'
+        default: return 'text-gray-500'
     }
 }
 
-/** 进度条颜色 */
 function progressBarColor(stage: string): string {
     switch (stage) {
         case 'downloading': return 'bg-blue-500'
@@ -71,20 +75,19 @@ function progressBarColor(stage: string): string {
     }
 }
 
-/** 判断当前平台是否支持自动安装（仅 Linux） */
 function isAutoInstallSupported(platform?: string): boolean {
     return platform === 'linux'
 }
 
-/** 判断是否为 Windows 平台 */
 function isWindowsPlatform(platform?: string): boolean {
     return platform === 'windows' || platform === 'win32'
 }
 
-/** 判断是否为 Mac 平台 */
 function isMacPlatform(platform?: string): boolean {
     return platform === 'mac' || platform === 'darwin'
 }
+
+/* ==================== 主组件 ==================== */
 
 export default function InstallPage() {
     const [installInfo, setInstallInfo] = useState<QQInstallInfo | null>(null)
@@ -95,7 +98,6 @@ export default function InstallPage() {
     const [selectedLink, setSelectedLink] = useState<QQDownloadLink | null>(null)
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-    // 获取安装信息
     const fetchInstallInfo = useCallback(async () => {
         try {
             const res = await noAuthFetch<QQInstallInfo>('/install/info')
@@ -103,13 +105,11 @@ export default function InstallPage() {
         } catch { /* ignore */ }
     }, [])
 
-    // 获取推荐版本
     const fetchVersion = useCallback(async () => {
         try {
             const res = await noAuthFetch<VersionRecommended>('/version/recommended')
             if (res.code === 0 && res.data) {
                 setVersionData(res.data)
-                // 自动选择第一个推荐链接
                 if (res.data.downloadLinks?.length > 0 && !selectedLink) {
                     setSelectedLink(res.data.downloadLinks[0])
                 }
@@ -117,7 +117,6 @@ export default function InstallPage() {
         } catch { /* ignore */ }
     }, [selectedLink])
 
-    // 获取安装进度
     const fetchProgress = useCallback(async () => {
         try {
             const res = await noAuthFetch<InstallProgress>('/install/progress')
@@ -125,446 +124,319 @@ export default function InstallPage() {
                 setProgress(res.data)
                 if (res.data.stage === 'done' || res.data.stage === 'error') {
                     setInstalling(false)
-                    if (pollRef.current) {
-                        clearInterval(pollRef.current)
-                        pollRef.current = null
-                    }
-                    if (res.data.stage === 'done') {
-                        showToast('QQ 安装完成！重启后生效', 'success')
-                    } else if (res.data.stage === 'error') {
-                        showToast(res.data.error || '安装失败', 'error')
-                    }
+                    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+                    if (res.data.stage === 'done') showToast('QQ 安装完成，重启后生效', 'success')
+                    else if (res.data.stage === 'error') showToast(res.data.error || '安装失败', 'error')
                 }
             }
         } catch { /* ignore */ }
     }, [])
 
-    // 初始加载
     useEffect(() => {
         setLoading(true)
-        Promise.all([fetchInstallInfo(), fetchVersion(), fetchProgress()])
-            .finally(() => setLoading(false))
+        Promise.all([fetchInstallInfo(), fetchVersion(), fetchProgress()]).finally(() => setLoading(false))
     }, [fetchInstallInfo, fetchVersion, fetchProgress])
 
-    useEffect(() => {
-        return () => {
-            if (pollRef.current) clearInterval(pollRef.current)
-        }
-    }, [])
+    useEffect(() => { return () => { if (pollRef.current) clearInterval(pollRef.current) } }, [])
 
-    // 刷新版本信息
     const handleRefresh = async () => {
         setLoading(true)
         try {
             await noAuthFetch('/version/refresh', { method: 'POST' })
             await Promise.all([fetchInstallInfo(), fetchVersion()])
             showToast('已刷新版本信息', 'success')
-        } catch {
-            showToast('刷新失败', 'error')
-        } finally {
-            setLoading(false)
-        }
+        } catch { showToast('刷新失败', 'error') }
+        finally { setLoading(false) }
     }
 
-    // 开始安装（仅 Linux）
     const handleInstall = async () => {
-        if (!selectedLink) {
-            showToast('请先选择安装包', 'warning')
-            return
-        }
+        if (!selectedLink) { showToast('请先选择安装包', 'warning'); return }
         if (installing) return
-
         setInstalling(true)
         try {
-            const res = await noAuthFetch('/install/start', {
-                method: 'POST',
-                body: JSON.stringify(selectedLink),
-            })
-            if (res.code !== 0) {
-                showToast(res.message || '启动安装失败', 'error')
-                setInstalling(false)
-                return
-            }
+            const res = await noAuthFetch('/install/start', { method: 'POST', body: JSON.stringify(selectedLink) })
+            if (res.code !== 0) { showToast(res.message || '启动安装失败', 'error'); setInstalling(false); return }
             showToast('安装任务已启动', 'info')
             pollRef.current = setInterval(fetchProgress, 800)
-        } catch {
-            showToast('启动安装失败', 'error')
-            setInstalling(false)
-        }
+        } catch { showToast('启动安装失败', 'error'); setInstalling(false) }
     }
 
-    // 重置状态
     const handleReset = async () => {
         try {
             await noAuthFetch('/install/reset', { method: 'POST' })
-            setProgress(null)
-            setInstalling(false)
-            showToast('已重置', 'info')
+            setProgress(null); setInstalling(false); showToast('已重置', 'info')
         } catch { /* ignore */ }
-    }
-
-    if (loading && !installInfo) {
-        return (
-            <div className="flex items-center justify-center h-64 empty-state">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="loading-spinner text-primary" />
-                    <div className="text-gray-400 text-sm">正在获取版本信息...</div>
-                </div>
-            </div>
-        )
     }
 
     const currentPlatform = installInfo?.platform || versionData?.platform?.platform || ''
     const autoInstallSupported = isAutoInstallSupported(currentPlatform)
     const isWindows = isWindowsPlatform(currentPlatform)
     const isMac = isMacPlatform(currentPlatform)
-
-    const isActive = progress && (progress.stage === 'downloading' || progress.stage === 'extracting' || progress.stage === 'installing')
+    const isActive = progress && ['downloading', 'extracting', 'installing'].includes(progress.stage)
     const isDone = progress?.stage === 'done'
     const isError = progress?.stage === 'error'
 
-    // 所有下载链接（用于 Windows/Mac 手动下载展示）
-    const allDownloadLinks = versionData?.downloadLinks || []
+    if (loading && !installInfo) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="loading-spinner !w-6 !h-6 text-brand-500" />
+                    <span className="text-xs text-gray-400">正在获取版本信息...</span>
+                </div>
+            </div>
+        )
+    }
 
     return (
-        <div className="space-y-6 stagger-children">
-            {/* 当前环境信息 */}
-            <div className="card p-5 hover-lift">
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                        <IconInfo size={16} className="text-gray-400" />
-                        当前环境
-                    </h3>
-                    <button onClick={handleRefresh} className="btn-ghost btn text-xs px-2.5 py-1.5" disabled={loading || !!isActive}>
-                        <IconRefresh size={13} className={loading ? 'animate-spin' : ''} />
+        <div className="space-y-5">
+            {/* 环境信息卡片 */}
+            <div className="rounded-xl border border-gray-200/70 dark:border-white/[0.06] bg-white dark:bg-white/[0.03] overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 dark:border-white/[0.04]">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-500 dark:text-gray-400">
+                            <IconServer size={14} />
+                        </div>
+                        <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">运行环境</span>
+                    </div>
+                    <button
+                        onClick={handleRefresh}
+                        disabled={loading || !!isActive}
+                        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/[0.06] transition-all disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                        <IconRefresh size={12} className={loading ? 'animate-spin' : ''} />
                         刷新
                     </button>
                 </div>
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                    <InfoCard label="QQ 版本" value={installInfo?.version || '-'} />
-                    <InfoCard label="QQ Build" value={installInfo?.build || '-'} />
-                    <InfoCard label="NapCat 版本" value={versionData?.napcatVersion || '-'} />
-                    <InfoCard label="运行平台" value={installInfo ? `${platformLabel(installInfo.platform)} ${installInfo.arch}` : '-'} />
-                    <InfoCard label="安装目录" value={installInfo?.installDir || '-'} mono />
-                    <InfoCard label="推荐 Release" value={versionData?.releaseTag || '-'} highlight />
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-gray-100 dark:divide-white/[0.04]">
+                    <EnvItem icon={<IconPackage size={14} />} label="QQ 版本" value={installInfo?.version || '-'} />
+                    <EnvItem icon={<IconTag size={14} />} label="Build" value={installInfo?.build || '-'} />
+                    <EnvItem icon={<IconShieldSmall />} label="NapCat" value={versionData?.napcatVersion || '-'} />
+                    <EnvItem icon={<PlatformIcon platform={currentPlatform} size={14} />} label="平台" value={installInfo ? `${platformLabel(installInfo.platform)} ${installInfo.arch}` : '-'} />
+                    <EnvItem icon={<IconFolder size={14} />} label="安装目录" value={installInfo?.installDir || '-'} mono />
+                    <EnvItem icon={<IconCpu size={14} />} label="推荐版本" value={versionData?.releaseTag || '-'} accent />
                 </div>
             </div>
 
             {/* 版本警告 */}
             {versionData?.versionWarning && (
-                <div className="card p-4 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
-                    <div className="flex items-start gap-2">
-                        <IconAlert size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
-                        <div className="text-xs text-amber-700 dark:text-amber-300 whitespace-pre-line">
-                            {versionData.versionWarning}
-                        </div>
-                    </div>
+                <div className="flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-200/80 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/[0.06]">
+                    <IconAlert size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-300/90 whitespace-pre-line">{versionData.versionWarning}</p>
                 </div>
             )}
 
-            {/* ==================== Windows / Mac: 手动下载提示 ==================== */}
-            {(isWindows || isMac) && (
-                <>
-                    <div className="card p-4 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
-                        <div className="flex items-start gap-2">
-                            <IconAlert size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
-                            <div className="text-xs text-amber-700 dark:text-amber-300 space-y-1">
-                                <p className="font-semibold">
-                                    {isWindows ? 'Windows' : 'macOS'} 平台不支持自动安装
-                                </p>
-                                <p>请从下方选择对应的安装包链接，手动下载并安装。安装完成后重启 NapCat 即可生效。</p>
-                                {isWindows && (
-                                    <p>Windows 用户请下载 <strong>.exe</strong> 安装包，双击运行即可完成安装。</p>
-                                )}
-                                {isMac && (
-                                    <p>macOS 用户请下载 <strong>.dmg</strong> 安装包，打开后拖拽到 Applications 文件夹即可。</p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* 下载链接列表 */}
-                    <div className="card p-5 hover-lift">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
-                            <IconDownload size={16} className="text-gray-400" />
-                            下载链接
-                        </h3>
-
-                        {allDownloadLinks.length > 0 ? (
-                            <div className="space-y-2">
-                                {allDownloadLinks.map((link, idx) => (
-                                    <a
-                                        key={idx}
-                                        href={link.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="
-                                            flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-200
-                                            border-gray-200 dark:border-gray-700 hover:border-primary dark:hover:border-primary
-                                            hover:bg-primary/5 dark:hover:bg-primary/10 no-underline group
-                                        "
-                                    >
-                                        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                                            <IconDownload size={14} className="text-primary" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate group-hover:text-primary transition-colors">
-                                                {link.label}
-                                            </div>
-                                            <div className="text-xs text-gray-400 truncate mt-0.5">{link.url}</div>
-                                        </div>
-                                        <div className="flex items-center gap-2 flex-shrink-0">
-                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
-                                                {platformLabel(link.platform)}
-                                            </span>
-                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
-                                                {link.arch}
-                                            </span>
-                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
-                                                {formatLabel(link.format)}
-                                            </span>
-                                        </div>
-                                        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300 dark:text-gray-600 group-hover:text-primary transition-colors flex-shrink-0">
-                                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                                            <polyline points="15 3 21 3 21 9" />
-                                            <line x1="10" y1="14" x2="21" y2="3" />
-                                        </svg>
-                                    </a>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-8 text-gray-400 text-sm">
-                                {loading ? '加载中...' : '未找到可用的下载链接'}
-                            </div>
-                        )}
-                    </div>
-
-                    {versionData?.releaseUrl && (
-                        <div className="flex items-center gap-3">
-                            <a
-                                href={versionData.releaseUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="btn btn-ghost px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 no-underline"
-                            >
-                                查看 Release 页面 →
-                            </a>
-                        </div>
-                    )}
-
-                    <div className="card p-4 bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800">
-                        <div className="flex items-start gap-2">
-                            <IconInfo size={14} className="text-blue-400 mt-0.5 flex-shrink-0" />
-                            <div className="text-xs text-blue-600 dark:text-blue-400 space-y-1">
-                                <p>• 请下载与当前平台和架构匹配的安装包。</p>
-                                {isWindows && (
-                                    <>
-                                        <p>• 下载 <strong>.exe</strong> 安装包后，双击运行即可覆盖安装。</p>
-                                        <p>• 安装完成后需要<strong>重启 NapCat</strong> 才能生效。</p>
-                                    </>
-                                )}
-                                {isMac && (
-                                    <>
-                                        <p>• 下载 <strong>.dmg</strong> 文件后，打开并将 QQ 拖入 Applications 文件夹。</p>
-                                        <p>• 安装完成后需要<strong>重启 NapCat</strong> 才能生效。</p>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </>
-            )}
-
-            {/* ==================== Linux: 自动安装 ==================== */}
-            {autoInstallSupported && (
-                <>
-                    {/* 安装包选择 */}
-                    <div className="card p-5 hover-lift">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
-                            <IconDownload size={16} className="text-gray-400" />
-                            选择安装包
-                        </h3>
-
-                        {versionData?.downloadLinks && versionData.downloadLinks.length > 0 ? (
-                            <div className="space-y-2">
-                                {versionData.downloadLinks.map((link, idx) => (
-                                    <label
-                                        key={idx}
-                                        className={`
-                                            flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-200
-                                            ${selectedLink?.url === link.url
-                                                ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                                                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                                            }
-                                            ${isActive ? 'opacity-60 pointer-events-none' : ''}
-                                        `}
-                                    >
-                                        <input
-                                            type="radio"
-                                            name="install-link"
-                                            checked={selectedLink?.url === link.url}
-                                            onChange={() => setSelectedLink(link)}
-                                            className="accent-primary"
-                                            disabled={!!isActive}
-                                        />
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                                                {link.label}
-                                            </div>
-                                            <div className="text-xs text-gray-400 truncate mt-0.5">{link.url}</div>
-                                        </div>
-                                        <div className="flex items-center gap-2 flex-shrink-0">
-                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
-                                                {platformLabel(link.platform)}
-                                            </span>
-                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
-                                                {link.arch}
-                                            </span>
-                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
-                                                {formatLabel(link.format)}
-                                            </span>
-                                        </div>
-                                    </label>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-8 text-gray-400 text-sm">
-                                {loading ? '加载中...' : '未找到当前平台的推荐安装包'}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* 安装进度 */}
-                    {(isActive || isDone || isError) && progress && (
-                        <div className="card p-5 hover-lift animate-fade-in-up">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                                    {isDone ? <IconCheck size={16} className="text-emerald-500" /> :
-                                        isError ? <IconAlert size={16} className="text-red-500" /> :
-                                            <div className="loading-spinner !w-4 !h-4 !border-[1.5px]" />}
-                                    安装进度
-                                </h3>
-                                <span className={`text-xs font-medium ${stageColor(progress.stage)}`}>
-                                    {stageLabel(progress.stage)}
-                                </span>
-                            </div>
-
-                            <div className="w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden mb-3">
-                                <div
-                                    className={`h-full rounded-full transition-all duration-500 ease-out ${progressBarColor(progress.stage)}`}
-                                    style={{ width: `${progress.percent}%` }}
-                                />
-                            </div>
-
-                            <div className="flex items-center justify-between text-xs text-gray-500">
-                                <span>{progress.message}</span>
-                                <span>{progress.percent}%</span>
-                            </div>
-
-                            {progress.stage === 'downloading' && (
-                                <div className="flex items-center justify-between text-xs text-gray-400 mt-2">
-                                    <span>
-                                        {formatBytes(progress.downloadedBytes || 0)}
-                                        {progress.totalBytes ? ` / ${formatBytes(progress.totalBytes)}` : ''}
-                                    </span>
-                                    <span>{formatSpeed(progress.speed || 0)}</span>
-                                </div>
-                            )}
-
-                            {isError && progress.error && (
-                                <div className="mt-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-                                    <p className="text-xs text-red-600 dark:text-red-400">{progress.error}</p>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* 操作按钮 */}
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={handleInstall}
-                            disabled={!selectedLink || !!isActive || installing}
-                            className={`
-                                btn px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
-                                flex items-center gap-2
-                                ${!selectedLink || isActive || installing
-                                    ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
-                                    : 'bg-primary text-white hover:opacity-90 shadow-md hover:shadow-lg'
-                                }
-                            `}
-                        >
-                            {installing || isActive ? (
-                                <>
-                                    <div className="loading-spinner !w-4 !h-4 !border-[1.5px] !border-current" />
-                                    安装中...
-                                </>
-                            ) : (
-                                <>
-                                    <IconDownload size={15} />
-                                    覆盖安装
-                                </>
-                            )}
-                        </button>
-
-                        {(isDone || isError) && (
-                            <button
-                                onClick={handleReset}
-                                className="btn btn-ghost px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                            >
-                                重置
-                            </button>
-                        )}
-
-                        {versionData?.releaseUrl && (
-                            <a
-                                href={versionData.releaseUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="btn btn-ghost px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 no-underline"
-                            >
-                                查看 Release →
-                            </a>
-                        )}
-                    </div>
-
-                    {/* 提示信息 */}
-                    <div className="card p-4 bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800">
-                        <div className="flex items-start gap-2">
-                            <IconInfo size={14} className="text-blue-400 mt-0.5 flex-shrink-0" />
-                            <div className="text-xs text-blue-600 dark:text-blue-400 space-y-1">
-                                <p>• 覆盖安装会将新版本 QQ 安装到当前 QQ 所在目录，安装完成后需要<strong>重启 NapCat</strong> 才能生效。</p>
-                                <p>• Linux 平台使用 dpkg/rpm 安装对应格式的安装包，请确保选择与系统匹配的格式。</p>
-                                <p>• 安装过程中请勿关闭页面，否则可能导致安装中断。</p>
-                            </div>
-                        </div>
-                    </div>
-                </>
-            )}
-
-            {/* ==================== 未知平台 ==================== */}
-            {!autoInstallSupported && !isWindows && !isMac && currentPlatform && (
-                <div className="card p-4 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
-                    <div className="flex items-start gap-2">
-                        <IconAlert size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
-                        <div className="text-xs text-amber-700 dark:text-amber-300">
-                            <p>当前平台 ({currentPlatform}) 暂不支持自动安装，请前往 Release 页面手动下载安装。</p>
-                        </div>
-                    </div>
+            {/* 安装/下载区域 */}
+            {autoInstallSupported ? (
+                <LinuxInstallPanel
+                    versionData={versionData}
+                    selectedLink={selectedLink}
+                    onSelectLink={setSelectedLink}
+                    progress={progress}
+                    isActive={!!isActive}
+                    isDone={!!isDone}
+                    isError={!!isError}
+                    installing={installing}
+                    onInstall={handleInstall}
+                    onReset={handleReset}
+                />
+            ) : (isWindows || isMac) ? (
+                <ManualDownloadPanel
+                    platform={isWindows ? 'windows' : 'mac'}
+                    links={versionData?.downloadLinks || []}
+                />
+            ) : (
+                <div className="rounded-xl border border-gray-200/70 dark:border-white/[0.06] bg-white dark:bg-white/[0.03] p-10 flex flex-col items-center text-center">
+                    <IconAlert size={36} className="text-gray-300 dark:text-gray-600 mb-3" />
+                    <p className="text-sm text-gray-400 font-medium">暂未检测到当前平台的推荐下载链接</p>
+                    <p className="text-xs text-gray-400/70 mt-1">请尝试点击"刷新"或前往 NapCat 官网手动查找</p>
                 </div>
             )}
         </div>
     )
 }
 
-/** 信息卡片 */
-function InfoCard({ label, value, mono, highlight }: { label: string; value: string; mono?: boolean; highlight?: boolean }) {
+/* ==================== 子组件 ==================== */
+
+function EnvItem({ icon, label, value, mono, accent }: {
+    icon: React.ReactNode; label: string; value: string; mono?: boolean; accent?: boolean
+}) {
     return (
-        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-            <div className="text-[10px] text-gray-400 font-medium mb-1">{label}</div>
-            <div className={`text-sm font-semibold truncate ${highlight ? 'text-primary' :
-                'text-gray-800 dark:text-gray-200'
-                } ${mono ? 'font-mono text-xs' : ''}`} title={value}>
+        <div className="px-4 py-3.5 flex flex-col gap-1.5 min-w-0">
+            <div className="flex items-center gap-1.5 text-gray-400 dark:text-gray-500">
+                {icon}
+                <span className="text-[10px] font-semibold uppercase tracking-wider">{label}</span>
+            </div>
+            <span className={`text-[13px] font-semibold truncate ${mono ? 'font-mono text-[12px]' : ''} ${accent ? 'text-brand-500' : 'text-gray-800 dark:text-gray-200'}`} title={value}>
                 {value}
+            </span>
+        </div>
+    )
+}
+
+function IconShieldSmall() {
+    return (
+        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+        </svg>
+    )
+}
+
+function LinuxInstallPanel({ versionData, selectedLink, onSelectLink, progress, isActive, isDone, isError, installing, onInstall, onReset }: {
+    versionData: VersionRecommended | null
+    selectedLink: QQDownloadLink | null
+    onSelectLink: (link: QQDownloadLink) => void
+    progress: InstallProgress | null
+    isActive: boolean; isDone: boolean; isError: boolean; installing: boolean
+    onInstall: () => void; onReset: () => void
+}) {
+    const links = versionData?.downloadLinks || []
+
+    return (
+        <div className="rounded-xl border border-gray-200/70 dark:border-white/[0.06] bg-white dark:bg-white/[0.03] overflow-hidden">
+            <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-gray-100 dark:border-white/[0.04]">
+                <div className="w-7 h-7 rounded-lg bg-brand-50 dark:bg-brand-500/10 flex items-center justify-center text-brand-500">
+                    <IconDownload size={14} />
+                </div>
+                <div>
+                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">自动安装更新</span>
+                    <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">Linux</span>
+                </div>
+            </div>
+
+            <div className="p-5 space-y-5">
+                {isActive && progress && (
+                    <div className="space-y-2.5 p-4 rounded-xl bg-gray-50 dark:bg-white/[0.03] border border-gray-100 dark:border-white/[0.04]">
+                        <div className="flex items-center justify-between text-xs">
+                            <span className={`font-semibold ${stageColor(progress.stage)}`}>{stageLabel(progress.stage)}</span>
+                            <span className="font-bold text-gray-700 dark:text-gray-300 tabular-nums">{progress.percent}%</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all duration-300 ease-out ${progressBarColor(progress.stage)}`} style={{ width: `${progress.percent}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-gray-400">
+                            <span className="truncate mr-4">
+                                {progress.totalBytes && progress.totalBytes > 0
+                                    ? `${formatBytes(progress.downloadedBytes || 0)} / ${formatBytes(progress.totalBytes)}`
+                                    : progress.message}
+                            </span>
+                            <span className="tabular-nums flex-shrink-0">{formatSpeed(progress.speed || 0)}</span>
+                        </div>
+                    </div>
+                )}
+
+                {(isDone || isError) && (
+                    <div className={`flex items-center gap-3 p-4 rounded-xl border ${isDone
+                        ? 'border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/[0.06]'
+                        : 'border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/[0.06]'
+                        }`}>
+                        {isDone
+                            ? <IconCheckCircle size={20} className="text-emerald-500 flex-shrink-0" />
+                            : <IconXCircle size={20} className="text-red-500 flex-shrink-0" />}
+                        <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-semibold ${isDone ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
+                                {isDone ? '安装完成，重启 NapCat 后生效' : '安装失败'}
+                            </p>
+                            {isError && progress?.error && <p className="text-xs text-red-500/80 mt-0.5 truncate">{progress.error}</p>}
+                        </div>
+                        <button onClick={onReset} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-2 py-1 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex-shrink-0 cursor-pointer">
+                            <IconRotateCcw size={11} /> 重置
+                        </button>
+                    </div>
+                )}
+
+                {links.length > 0 && (
+                    <div className="space-y-2.5">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">选择要安装的版本：</p>
+                        <div className="space-y-2">
+                            {links.map((link, idx) => (
+                                <div
+                                    key={idx}
+                                    onClick={() => onSelectLink(link)}
+                                    className={`group flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${selectedLink?.url === link.url
+                                        ? 'border-brand-300 dark:border-brand-500/40 bg-brand-50/50 dark:bg-brand-500/[0.06]'
+                                        : 'border-gray-150 dark:border-white/[0.06] hover:border-gray-300 dark:hover:border-white/[0.1] hover:bg-gray-50/50 dark:hover:bg-white/[0.02]'
+                                        }`}
+                                >
+                                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${selectedLink?.url === link.url
+                                        ? 'border-brand-500 bg-brand-500'
+                                        : 'border-gray-300 dark:border-gray-600'
+                                        }`}>
+                                        {selectedLink?.url === link.url && (
+                                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                                        )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{link.label}</div>
+                                        <div className="text-[10px] text-gray-400 truncate mt-0.5">{link.url}</div>
+                                    </div>
+                                    <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.06] text-gray-500 dark:text-gray-400 flex-shrink-0">
+                                        {link.format}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <button
+                    onClick={onInstall}
+                    disabled={installing || !selectedLink || isActive}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-sm shadow-brand-500/20 hover:shadow-brand-500/30"
+                >
+                    {installing
+                        ? <><div className="loading-spinner !w-3.5 !h-3.5 !border-[1.5px] !border-white !border-t-transparent" /> 正在处理...</>
+                        : <><IconDownload size={15} /> 开始安装</>
+                    }
+                </button>
+            </div>
+        </div>
+    )
+}
+
+function ManualDownloadPanel({ platform, links }: { platform: 'windows' | 'mac'; links: QQDownloadLink[] }) {
+    return (
+        <div className="rounded-xl border border-gray-200/70 dark:border-white/[0.06] bg-white dark:bg-white/[0.03] overflow-hidden">
+            <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-gray-100 dark:border-white/[0.04]">
+                <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center text-gray-500 dark:text-gray-400">
+                    <PlatformIcon platform={platform} size={14} />
+                </div>
+                <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                    下载安装包 ({platform === 'windows' ? 'Windows' : 'macOS'})
+                </span>
+            </div>
+
+            <div className="p-5 space-y-4">
+                <div className="flex items-start gap-2.5 p-3.5 rounded-lg bg-amber-50 dark:bg-amber-500/[0.06] border border-amber-200/60 dark:border-amber-500/15">
+                    <IconAlert size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-amber-800 dark:text-amber-300/90 leading-relaxed">
+                        当前平台不支持自动安装。请下载对应安装包手动安装，完成后重启 NapCat 即可。
+                    </p>
+                </div>
+
+                {links.length > 0 ? (
+                    <div className="space-y-2">
+                        {links.map((link, idx) => (
+                            <a
+                                key={idx}
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group flex items-center gap-3 p-3.5 rounded-lg border border-gray-150 dark:border-white/[0.06] hover:border-brand-300 dark:hover:border-brand-500/30 hover:bg-brand-50/30 dark:hover:bg-brand-500/[0.03] transition-all no-underline"
+                            >
+                                <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-white/[0.06] group-hover:bg-brand-100 dark:group-hover:bg-brand-500/10 flex items-center justify-center text-gray-400 group-hover:text-brand-500 transition-colors flex-shrink-0">
+                                    <PlatformIcon platform={link.platform} size={16} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors truncate">{link.label}</div>
+                                    <div className="text-[10px] text-gray-400 uppercase mt-0.5">{link.format} 格式</div>
+                                </div>
+                                <IconExternalLink size={14} className="text-gray-300 dark:text-gray-600 group-hover:text-brand-400 transition-colors flex-shrink-0" />
+                            </a>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-xs text-gray-400 text-center py-4">暂无可用的下载链接</p>
+                )}
             </div>
         </div>
     )
