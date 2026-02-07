@@ -5,7 +5,7 @@ import type { QQInstallInfo, InstallProgress, VersionRecommended } from '../type
 import {
     IconDownload, IconRefresh, IconAlert, IconPackage,
     IconWindows, IconLinux, IconApple, IconServer, IconFolder, IconTag, IconCpu,
-    IconExternalLink, IconCheckCircle, IconXCircle, IconRotateCcw
+    IconExternalLink, IconCheckCircle, IconXCircle, IconRotateCcw, IconBox
 } from '../components/icons'
 
 /* ==================== 工具函数 ==================== */
@@ -207,13 +207,14 @@ export default function InstallPage() {
                         刷新
                     </button>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-gray-100 dark:divide-white/[0.04]">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 divide-x divide-y sm:divide-y-0 divide-gray-100 dark:divide-white/[0.04]">
                     <EnvItem icon={<IconPackage size={14} />} label="QQ 版本" value={installInfo?.version || '-'} />
                     <EnvItem icon={<IconTag size={14} />} label="Build" value={installInfo?.build || '-'} />
                     <EnvItem icon={<IconShieldSmall />} label="NapCat" value={versionData?.napcatVersion || '-'} />
                     <EnvItem icon={<PlatformIcon platform={currentPlatform} size={14} />} label="平台" value={installInfo ? `${platformLabel(installInfo.platform)} ${installInfo.arch}` : '-'} />
                     <EnvItem icon={<IconFolder size={14} />} label="安装目录" value={installInfo?.installDir || '-'} mono />
                     <EnvItem icon={<IconCpu size={14} />} label="推荐版本" value={versionData?.releaseTag || '-'} accent />
+                    <EnvItem icon={<IconBox size={14} />} label="运行模式" value={installInfo?.isDocker ? 'Docker' : installInfo?.isRootless ? 'Rootless' : '系统级'} badge={installInfo?.isDocker ? 'docker' : undefined} />
                 </div>
             </div>
 
@@ -236,6 +237,7 @@ export default function InstallPage() {
                     isError={!!isError}
                     installing={installing}
                     isAlreadyInstalled={isAlreadyInstalled}
+                    isDocker={installInfo?.isDocker || false}
                     onInstall={handleInstall}
                     onReset={handleReset}
                 />
@@ -257,8 +259,8 @@ export default function InstallPage() {
 
 /* ==================== 子组件 ==================== */
 
-function EnvItem({ icon, label, value, mono, accent }: {
-    icon: React.ReactNode; label: string; value: string; mono?: boolean; accent?: boolean
+function EnvItem({ icon, label, value, mono, accent, badge }: {
+    icon: React.ReactNode; label: string; value: string; mono?: boolean; accent?: boolean; badge?: string
 }) {
     return (
         <div className="px-4 py-3.5 flex flex-col gap-1.5 min-w-0">
@@ -266,9 +268,14 @@ function EnvItem({ icon, label, value, mono, accent }: {
                 {icon}
                 <span className="text-[10px] font-semibold uppercase tracking-wider">{label}</span>
             </div>
-            <span className={`text-[13px] font-semibold truncate ${mono ? 'font-mono text-[12px]' : ''} ${accent ? 'text-brand-500' : 'text-gray-800 dark:text-gray-200'}`} title={value}>
-                {value}
-            </span>
+            <div className="flex items-center gap-1.5">
+                <span className={`text-[13px] font-semibold truncate ${mono ? 'font-mono text-[12px]' : ''} ${accent ? 'text-brand-500' : 'text-gray-800 dark:text-gray-200'}`} title={value}>
+                    {value}
+                </span>
+                {badge === 'docker' && (
+                    <span className="text-[9px] px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold flex-shrink-0">🐳</span>
+                )}
+            </div>
         </div>
     )
 }
@@ -281,12 +288,13 @@ function IconShieldSmall() {
     )
 }
 
-function LinuxInstallPanel({ versionData, bestLink, progress, isActive, isDone, isError, installing, isAlreadyInstalled, onInstall, onReset }: {
+function LinuxInstallPanel({ versionData, bestLink, progress, isActive, isDone, isError, installing, isAlreadyInstalled, isDocker, onInstall, onReset }: {
     versionData: VersionRecommended | null
     bestLink: { label: string; url: string; format: string } | null
     progress: InstallProgress | null
     isActive: boolean; isDone: boolean; isError: boolean; installing: boolean
     isAlreadyInstalled: boolean
+    isDocker: boolean
     onInstall: () => void; onReset: () => void
 }) {
     return (
@@ -298,6 +306,9 @@ function LinuxInstallPanel({ versionData, bestLink, progress, isActive, isDone, 
                 <div>
                     <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">自动安装更新</span>
                     <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">Linux</span>
+                    {isDocker && (
+                        <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium">Docker</span>
+                    )}
                 </div>
             </div>
 
