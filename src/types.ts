@@ -169,6 +169,15 @@ export interface InstallProgress {
 }
 
 /**
+ * NapCat 启动模式
+ * - invasive: 入侵式，修改 QQ 的 package.json 指向 loadNapCat.js
+ * - non-invasive: 非入侵式，通过 LD_PRELOAD=libnapcat_launcher.so 注入
+ * - docker: Docker 容器模式
+ * - unknown: 未知
+ */
+export type LaunchMode = 'invasive' | 'non-invasive' | 'docker' | 'unknown';
+
+/**
  * QQ 安装路径信息
  */
 export interface QQInstallInfo {
@@ -188,4 +197,6 @@ export interface QQInstallInfo {
     isRootless: boolean;
     /** 是否运行在 Docker 容器中 */
     isDocker: boolean;
+    /** NapCat 启动模式 */
+    launchMode: LaunchMode;
 }

@@ -60,6 +60,8 @@ export interface VersionRecommended extends VersionMatchResult {
     isAlreadyInstalled: boolean
 }
 
+export type LaunchMode = 'invasive' | 'non-invasive' | 'docker' | 'unknown'
+
 export interface QQInstallInfo {
     execPath: string
     installDir: string
@@ -69,6 +71,7 @@ export interface QQInstallInfo {
     arch: string
     isRootless: boolean
     isDocker: boolean
+    launchMode: LaunchMode
 }
 
 export type InstallStage = 'idle' | 'downloading' | 'extracting' | 'installing' | 'done' | 'error'
