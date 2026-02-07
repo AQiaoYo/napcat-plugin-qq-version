@@ -68,6 +68,7 @@ export interface QQInstallInfo {
     platform: string
     arch: string
     isRootless: boolean
+    isDocker: boolean
 }
 
 export type InstallStage = 'idle' | 'downloading' | 'extracting' | 'installing' | 'done' | 'error'

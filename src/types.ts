@@ -186,4 +186,6 @@ export interface QQInstallInfo {
     arch: string;
     /** 是否为 rootless 模式（QQ 安装在 ~/Napcat/opt/QQ/） */
     isRootless: boolean;
+    /** 是否运行在 Docker 容器中 */
+    isDocker: boolean;
 }
