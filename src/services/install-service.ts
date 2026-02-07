@@ -118,6 +118,62 @@ function sudoPrefix(): string {
     return '';
 }
 
+// ==================== Docker 环境检测 ====================
+
+/** Docker 容器中 QQ 的安装路径 */
+const DOCKER_QQ_PATH = '/opt/QQ';
+/** Docker 容器中 NapCat 的路径 */
+const DOCKER_NAPCAT_PATH = '/app/napcat';
+/** Docker 容器中 QQ 数据目录 */
+const DOCKER_QQ_DATA_PATH = '/app/.config/QQ';
+
+/**
+ * 检测当前是否运行在 Docker 容器中
+ * 通过多种方式检测：
+ * 1. /.dockerenv 文件存在
+ * 2. /proc/1/cgroup 包含 docker/containerd 关键字
+ * 3. 环境变量 NAPCAT_UID 存在（NapCat-Docker 特有）
+ * 4. /app/napcat 目录存在且 /opt/QQ 目录存在（NapCat-Docker 目录结构）
+ */
+function isDockerEnvironment(): boolean {
+    try {
+        // 方式1: 检查 /.dockerenv
+        if (fs.existsSync('/.dockerenv')) return true;
+
+        // 方式2: 检查 /proc/1/cgroup
+        try {
+            const cgroup = fs.readFileSync('/proc/1/cgroup', 'utf-8');
+            if (cgroup.includes('docker') || cgroup.includes('containerd') || cgroup.includes('kubepods')) {
+                return true;
+            }
+        } catch { /* ignore */ }
+
+        // 方式3: 检查 NapCat-Docker 特有的环境变量
+        if (process.env.NAPCAT_UID !== undefined || process.env.NAPCAT_GID !== undefined) {
+            return true;
+        }
+
+        // 方式4: 检查 NapCat-Docker 特有的目录结构
+        if (fs.existsSync(DOCKER_NAPCAT_PATH) && fs.existsSync(DOCKER_QQ_PATH) &&
+            fs.existsSync(path.join(DOCKER_NAPCAT_PATH, 'napcat.mjs'))) {
+            return true;
+        }
+
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+/** 缓存 Docker 检测结果 */
+let _isDocker: boolean | null = null;
+function isDocker(): boolean {
+    if (_isDocker === null) {
+        _isDocker = isDockerEnvironment();
+    }
+    return _isDocker;
+}
+
 // ==================== Rootless 模式检测 ====================
 
 /**
@@ -132,8 +188,10 @@ function getRootlessBaseDir(): string {
 /**
  * 检测当前 QQ 是否运行在 rootless 模式
  * 通过检查 ~/Napcat/opt/QQ/ 目录是否存在来判断
+ * 注意：Docker 环境不算 rootless 模式
  */
 function isRootlessMode(): boolean {
+    if (isDocker()) return false;
     const baseDir = getRootlessBaseDir();
     if (!baseDir) return false;
     const qqPath = path.join(baseDir, 'opt', 'QQ', 'qq');
@@ -159,50 +217,85 @@ function parseVersionFromUrl(url: string): string | null {
 // ==================== QQ 版本配置更新 ====================
 
 /**
+ * 获取 QQ 版本配置目录的候选路径列表
+ * Docker 环境: /app/.config/QQ/versions/
+ * 普通环境: ~/.config/QQ/versions/
+ */
+function getQQVersionConfigPaths(): string[] {
+    const paths: string[] = [];
+
+    // Docker 环境优先检查 /app/.config/QQ
+    if (isDocker()) {
+        const dockerConfigDir = path.join(DOCKER_QQ_DATA_PATH, 'versions');
+        paths.push(dockerConfigDir);
+    }
+
+    // 普通环境检查 ~/.config/QQ
+    const homeDir = process.env.HOME || '';
+    if (homeDir) {
+        paths.push(path.join(homeDir, '.config', 'QQ', 'versions'));
+    }
+
+    return paths;
+}
+
+/**
  * 更新用户 QQ 版本配置文件
  * 参考 NapCat-Installer 的 update_linuxqq_config 函数
  * 
- * 修改 ~/.config/QQ/versions/config.json 中的:
+ * 修改 config.json 中的:
  * - baseVersion: 目标版本号
  * - curVersion: 目标版本号
  * - buildId: 构建号（版本号中 - 后面的数字）
+ * 
+ * Docker 环境: /app/.config/QQ/versions/config.json
+ * 普通环境: ~/.config/QQ/versions/config.json
  */
 function updateLinuxQQConfig(targetVersion: string): void {
-    const homeDir = process.env.HOME || '';
-    if (!homeDir) {
-        pluginState.log('warn', '无法获取 HOME 目录，跳过版本配置更新');
-        return;
-    }
-
     const buildId = targetVersion.split('-').pop() || '';
-    const configDir = path.join(homeDir, '.config', 'QQ', 'versions');
-    const configFile = path.join(configDir, 'config.json');
+    const configPaths = getQQVersionConfigPaths();
 
-    pluginState.log('info', `正在更新 QQ 版本配置: ${configFile}`);
-    pluginState.logDebug(`目标版本: ${targetVersion}, buildId: ${buildId}`);
-
-    if (!fs.existsSync(configDir)) {
-        pluginState.log('warn', `版本配置目录不存在: ${configDir}，QQ 首次启动时会自动创建`);
+    if (configPaths.length === 0) {
+        pluginState.log('warn', '无法获取 QQ 版本配置路径，跳过版本配置更新');
         return;
     }
 
-    if (!fs.existsSync(configFile)) {
-        pluginState.log('warn', `版本配置文件不存在: ${configFile}，QQ 首次启动时会自动创建`);
-        return;
+    let updated = false;
+
+    for (const configDir of configPaths) {
+        const configFile = path.join(configDir, 'config.json');
+
+        if (!fs.existsSync(configDir)) {
+            pluginState.logDebug(`版本配置目录不存在: ${configDir}，跳过`);
+            continue;
+        }
+
+        if (!fs.existsSync(configFile)) {
+            pluginState.logDebug(`版本配置文件不存在: ${configFile}，跳过`);
+            continue;
+        }
+
+        try {
+            pluginState.log('info', `正在更新 QQ 版本配置: ${configFile}`);
+            pluginState.logDebug(`目标版本: ${targetVersion}, buildId: ${buildId}`);
+
+            const configContent = fs.readFileSync(configFile, 'utf-8');
+            const config = JSON.parse(configContent);
+
+            config.baseVersion = targetVersion;
+            config.curVersion = targetVersion;
+            config.buildId = buildId;
+
+            fs.writeFileSync(configFile, JSON.stringify(config, null, 4), 'utf-8');
+            pluginState.log('info', `QQ 版本配置已更新: baseVersion=${targetVersion}, buildId=${buildId}`);
+            updated = true;
+        } catch (e) {
+            pluginState.log('warn', `更新 QQ 版本配置失败 (${configFile}):`, e);
+        }
     }
 
-    try {
-        const configContent = fs.readFileSync(configFile, 'utf-8');
-        const config = JSON.parse(configContent);
-
-        config.baseVersion = targetVersion;
-        config.curVersion = targetVersion;
-        config.buildId = buildId;
-
-        fs.writeFileSync(configFile, JSON.stringify(config, null, 4), 'utf-8');
-        pluginState.log('info', `QQ 版本配置已更新: baseVersion=${targetVersion}, buildId=${buildId}`);
-    } catch (e) {
-        pluginState.log('warn', '更新 QQ 版本配置失败:', e);
+    if (!updated) {
+        pluginState.log('warn', '未找到任何可更新的 QQ 版本配置文件，QQ 首次启动时会自动创建');
     }
 }
 
@@ -230,13 +323,25 @@ export function getQQInstallInfo(ctx: NapCatPluginContext): QQInstallInfo {
 
     // 尝试获取 QQ 可执行文件路径
     if (platform === 'linux') {
-        // 优先检查 rootless 安装路径（~/Napcat/opt/QQ/）
-        const homeDir = process.env.HOME || '';
-        if (homeDir) {
-            const rootlessPath = path.join(homeDir, 'Napcat', 'opt', 'QQ', 'qq');
-            if (fs.existsSync(rootlessPath)) {
-                execPath = rootlessPath;
-                installDir = path.dirname(rootlessPath);
+        // 优先检查 Docker 环境（/opt/QQ + /app/napcat）
+        if (isDocker()) {
+            const dockerQQPath = path.join(DOCKER_QQ_PATH, 'qq');
+            if (fs.existsSync(dockerQQPath)) {
+                execPath = dockerQQPath;
+                installDir = DOCKER_QQ_PATH;
+            } else if (fs.existsSync(DOCKER_QQ_PATH)) {
+                installDir = DOCKER_QQ_PATH;
+            }
+        }
+        // 再检查 rootless 安装路径（~/Napcat/opt/QQ/）
+        if (!execPath) {
+            const homeDir = process.env.HOME || '';
+            if (homeDir) {
+                const rootlessPath = path.join(homeDir, 'Napcat', 'opt', 'QQ', 'qq');
+                if (fs.existsSync(rootlessPath)) {
+                    execPath = rootlessPath;
+                    installDir = path.dirname(rootlessPath);
+                }
             }
         }
         // 再检查系统级安装路径
@@ -285,6 +390,7 @@ export function getQQInstallInfo(ctx: NapCatPluginContext): QQInstallInfo {
         platform: platformStr,
         arch,
         isRootless: platform === 'linux' ? isRootlessMode() : false,
+        isDocker: isDocker(),
     };
 }
 
@@ -718,10 +824,191 @@ async function installOnLinuxSystem(link: QQDownloadLink): Promise<void> {
     }
 }
 
+// ==================== Docker 安装逻辑 ====================
+
+/**
+ * 在 Docker 容器中安装/更新 QQ
+ * 参考 NapCat-Docker 的 Dockerfile 和 entrypoint.sh
+ * 
+ * Docker 环境特点：
+ * - QQ 安装在 /opt/QQ（通过 dpkg -i 安装的 deb 包）
+ * - NapCat 在 /app/napcat
+ * - loadNapCat.js 指向 file:///app/napcat/napcat.mjs
+ * - QQ 数据目录在 /app/.config/QQ
+ * - 基础镜像基于 Ubuntu，有 dpkg 但可能没有 apt-get
+ * 
+ * 安装流程：
+ * 1. 下载 deb 包
+ * 2. 使用 dpkg -x 解压到临时目录（不使用 dpkg -i，避免依赖问题）
+ * 3. 将解压出的 /opt/QQ 文件覆盖到 /opt/QQ/
+ * 4. 修补 package.json 的 main 指向 loadNapCat.js
+ * 5. 确保 loadNapCat.js 正确指向 /app/napcat/napcat.mjs
+ * 6. 更新版本配置
+ */
+async function installOnDocker(link: QQDownloadLink): Promise<void> {
+    const arch = getSystemArch();
+    if (arch === 'unknown') {
+        throw new Error('不支持的系统架构');
+    }
+
+    // Docker 环境只支持 deb 格式
+    if (link.format !== 'deb') {
+        throw new Error(`Docker 环境仅支持 deb 格式安装包，当前格式: ${link.format}`);
+    }
+
+    // 验证 dpkg 可用
+    const packageInstaller = detectPackageInstaller();
+    if (packageInstaller !== 'dpkg') {
+        throw new Error('Docker 环境中未检测到 dpkg，无法解压 deb 包');
+    }
+
+    const tmpDir = '/tmp/napcat-qq-install';
+    const extractDir = path.join(tmpDir, 'extract');
+    const pkgFilePath = path.join(tmpDir, 'QQ.deb');
+
+    // 从 URL 中解析版本号
+    const targetVersion = parseVersionFromUrl(link.url);
+    pluginState.logDebug(`[Docker] 从下载链接解析到版本号: ${targetVersion || '未知'}`);
+
+    try {
+        // 创建临时目录
+        execSync(`rm -rf "${tmpDir}"`, { stdio: 'ignore' });
+        fs.mkdirSync(extractDir, { recursive: true });
+
+        // ===== 阶段1: 下载 =====
+        updateProgress('downloading', 5, '开始下载 QQ 安装包 (Docker)...', {
+            downloadedBytes: 0,
+            totalBytes: 0,
+            speed: 0,
+        });
+
+        await downloadFile(link.url, pkgFilePath, (downloaded, total, speed) => {
+            const percent = total > 0 ? Math.min(Math.round((downloaded / total) * 50) + 5, 55) : 10;
+            updateProgress('downloading', percent, '正在下载 QQ 安装包...', {
+                downloadedBytes: downloaded,
+                totalBytes: total,
+                speed,
+            });
+        });
+
+        // 验证文件是否下载成功
+        if (!fs.existsSync(pkgFilePath)) {
+            throw new Error('安装包下载失败：文件不存在');
+        }
+
+        const fileStats = fs.statSync(pkgFilePath);
+        if (fileStats.size < 1024 * 100) {
+            throw new Error('安装包下载失败：文件过小，可能下载不完整');
+        }
+
+        updateProgress('downloading', 55, '下载完成');
+
+        // ===== 阶段2: 解压到临时目录 =====
+        updateProgress('extracting', 58, '正在解压 QQ 安装包 (dpkg -x)...');
+
+        pluginState.log('info', '[Docker] 使用 dpkg -x 解压 deb 包到临时目录...');
+        execSync(`dpkg -x "${pkgFilePath}" "${extractDir}"`, {
+            stdio: 'pipe',
+            timeout: 300000,
+        });
+
+        // 验证解压结果
+        const extractedQQDir = path.join(extractDir, 'opt', 'QQ');
+        if (!fs.existsSync(extractedQQDir)) {
+            throw new Error('解压失败：未找到 opt/QQ 目录');
+        }
+
+        updateProgress('extracting', 65, '解压完成');
+
+        // ===== 阶段3: 覆盖 /opt/QQ 文件 =====
+        updateProgress('installing', 70, '正在更新 QQ 文件 (Docker /opt/QQ)...');
+
+        // 使用 cp -rf 将解压出的 QQ 文件覆盖到 /opt/QQ/
+        const sudo = sudoPrefix();
+        pluginState.log('info', `[Docker] 正在将 QQ 文件覆盖到 ${DOCKER_QQ_PATH}...`);
+        execSync(`${sudo}cp -rf "${extractedQQDir}/." "${DOCKER_QQ_PATH}/"`, {
+            stdio: 'pipe',
+            timeout: 120000,
+        });
+
+        updateProgress('installing', 82, '文件覆盖完成');
+
+        // ===== 阶段4: 修补 NapCat 启动配置 =====
+        // Docker 中 loadNapCat.js 指向 file:///app/napcat/napcat.mjs
+        // 参考 NapCat-Docker Dockerfile:
+        //   echo "(async () => {await import('file:///app/napcat/napcat.mjs');})();" > /opt/QQ/resources/app/loadNapCat.js
+        //   sed -i 's|"main": "[^"]*"|"main": "./loadNapCat.js"|' /opt/QQ/resources/app/package.json
+        updateProgress('installing', 84, '正在修补 NapCat 启动配置 (Docker)...');
+
+        const packageJsonPath = path.join(DOCKER_QQ_PATH, 'resources', 'app', 'package.json');
+        const loadNapCatPath = path.join(DOCKER_QQ_PATH, 'resources', 'app', 'loadNapCat.js');
+
+        // 从 package.json 读取实际版本号
+        let actualVersion = targetVersion;
+        try {
+            if (fs.existsSync(packageJsonPath)) {
+                const pkgContent = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+                if (pkgContent.version) {
+                    actualVersion = pkgContent.version;
+                    pluginState.log('info', `[Docker] 从 package.json 读取到实际 QQ 版本: ${actualVersion}`);
+                }
+
+                // 修改 package.json 的 main 字段指向 loadNapCat.js
+                pkgContent.main = './loadNapCat.js';
+                fs.writeFileSync(packageJsonPath, JSON.stringify(pkgContent, null, 4), 'utf-8');
+                pluginState.log('info', '[Docker] package.json 已修补: main -> ./loadNapCat.js');
+            } else {
+                pluginState.log('warn', `[Docker] package.json 不存在: ${packageJsonPath}`);
+            }
+
+            // 重新生成 loadNapCat.js，指向 Docker 中 NapCat 的路径
+            const loadScript = `(async () => {await import('file:///${DOCKER_NAPCAT_PATH}/napcat.mjs');})();`;
+            fs.writeFileSync(loadNapCatPath, loadScript, 'utf-8');
+            pluginState.log('info', `[Docker] loadNapCat.js 已生成，指向 ${DOCKER_NAPCAT_PATH}/napcat.mjs`);
+        } catch (e) {
+            pluginState.log('warn', '[Docker] 修补 NapCat 启动配置失败:', e);
+        }
+
+        // ===== 阶段5: 更新版本配置 =====
+        updateProgress('installing', 88, '正在更新版本配置...');
+        if (actualVersion) {
+            updateLinuxQQConfig(actualVersion);
+        } else {
+            pluginState.log('warn', '[Docker] 无法获取 QQ 版本号，跳过版本配置更新');
+        }
+
+        // ===== 阶段6: 清理 =====
+        updateProgress('installing', 93, '正在清理临时文件...');
+        try {
+            execSync(`rm -rf "${tmpDir}"`, { stdio: 'ignore' });
+        } catch {
+            // 清理失败不影响安装结果
+        }
+
+        // ===== 阶段7: 完成 =====
+        updateProgress('done', 100, 'QQ 安装完成！重启 Docker 容器后生效。', {
+            finishedAt: Date.now(),
+        });
+
+        pluginState.log('info', `[Docker] QQ 更新完成，安装路径: ${DOCKER_QQ_PATH}`);
+
+    } catch (err) {
+        // 清理临时文件
+        try {
+            execSync(`rm -rf "${tmpDir}"`, { stdio: 'ignore' });
+        } catch { /* ignore */ }
+
+        const errMsg = err instanceof Error ? err.message : String(err);
+        updateProgress('error', 0, '安装失败', { error: errMsg });
+        throw err;
+    }
+}
+
 // ==================== 主入口 ====================
 
 /**
  * 开始安装 QQ
+ * - Docker: dpkg -x 解压覆盖 /opt/QQ + 修补 loadNapCat.js + 更新版本配置
  * - Linux (rootless): dpkg -x 解压到 ~/Napcat/ + 更新版本配置
  * - Linux (系统级): apt-get/dnf 安装 + 更新版本配置
  * - Windows/Mac: 抛出错误，提示用户手动安装
@@ -749,12 +1036,17 @@ export async function startInstall(ctx: NapCatPluginContext, link: QQDownloadLin
     resetInstallProgress();
 
     try {
+        const docker = isDocker();
         const rootless = isRootlessMode();
-        pluginState.log('info', `安装模式: ${rootless ? 'Rootless (~/Napcat/)' : '系统级 (/opt/QQ/)'}`);
 
-        if (rootless) {
+        if (docker) {
+            pluginState.log('info', '安装模式: Docker (/opt/QQ + /app/napcat)');
+            await installOnDocker(link);
+        } else if (rootless) {
+            pluginState.log('info', '安装模式: Rootless (~/Napcat/)');
             await installOnLinuxRootless(link);
         } else {
+            pluginState.log('info', '安装模式: 系统级 (/opt/QQ/)');
             await installOnLinuxSystem(link);
         }
     } finally {
