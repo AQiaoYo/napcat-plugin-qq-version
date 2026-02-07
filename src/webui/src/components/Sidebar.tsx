@@ -8,7 +8,6 @@ interface SidebarProps {
 
 const menuItems: { id: PageId; label: string; icon: React.ReactNode }[] = [
     { id: 'install', label: 'QQ 安装', icon: <IconPackage size={18} /> },
-    { id: 'config', label: '插件配置', icon: <IconSettings size={18} /> },
 ]
 
 export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {

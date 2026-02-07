@@ -14,7 +14,6 @@
 import type { PluginConfigSchema, PluginConfigUIController } from 'napcat-types/napcat-onebot/network/plugin/types';
 import type { NapCatPluginContext, PluginHttpRequest, PluginHttpResponse } from 'napcat-types/napcat-onebot/network/plugin/types';
 import type { OB11Message } from 'napcat-types/napcat-onebot';
-import { EventType } from 'napcat-types/napcat-onebot/event/index';
 
 import { initConfigUI } from './config';
 import { pluginState } from './core/state';
@@ -72,7 +71,7 @@ const plugin_init = async (ctx: NapCatPluginContext) => {
                 router.page({
                     path: 'plugin-config',
                     title: 'QQ 安装管理',
-                    icon: '�',
+                    icon: '🕷️',
                     htmlFile: 'webui/index.html',
                     description: '管理 QQ 版本下载与安装'
                 });
@@ -102,14 +101,6 @@ const plugin_onmessage = async (ctx: NapCatPluginContext, event: OB11Message) =>
  */
 const plugin_cleanup = async (ctx: NapCatPluginContext) => {
     try {
-        // TODO: 在这里添加你的清理逻辑
-        // 示例：清理临时文件
-        // const fs = await import('fs');
-        // const path = await import('path');
-        // const tempDir = path.join(pluginState.dataPath, 'temp');
-        // if (fs.existsSync(tempDir)) {
-        //     fs.rmSync(tempDir, { recursive: true, force: true });
-        // }
         pluginState.log('info', '插件已卸载');
     } catch (e) {
         pluginState.log('warn', '插件卸载时出错:', e);

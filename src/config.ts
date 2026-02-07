@@ -25,13 +25,6 @@ export const DEFAULT_CONFIG: PluginConfig = {
  */
 export function initConfigUI(ctx: NapCatPluginContext) {
     const schema = ctx.NapCatConfig.combine(
-        // 插件信息头部
-        ctx.NapCatConfig.html(`
-            <div style="padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; margin-bottom: 20px; color: white;">
-                <h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: bold;">QQ 版本查询插件</h3>
-                <p style="margin: 0; font-size: 14px; opacity: 0.9;">自动获取与当前 NapCat 版本匹配的 QQ 版本下载链接</p>
-            </div>
-        `),
         // 调试模式
         ctx.NapCatConfig.boolean('debug', '调试模式', false, '启用后将输出详细的调试日志')
     );

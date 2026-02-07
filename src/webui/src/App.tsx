@@ -1,19 +1,11 @@
-import { useState } from 'react'
 import ToastContainer from './components/ToastContainer'
 import InstallPage from './pages/InstallPage'
-import ConfigPage from './pages/ConfigPage'
 import { useTheme } from './hooks/useTheme'
-import { IconPackage, IconSettings, IconGithub } from './components/icons'
+import { IconPackage, IconGithub } from './components/icons'
 
-export type PageId = 'install' | 'config'
-
-const tabs: { id: PageId; label: string; icon: React.ReactNode }[] = [
-    { id: 'install', label: 'QQ 版本管理', icon: <IconPackage size={15} /> },
-    { id: 'config', label: '设置', icon: <IconSettings size={15} /> },
-]
+export type PageId = 'install'
 
 function App() {
-    const [currentPage, setCurrentPage] = useState<PageId>('install')
     useTheme()
 
     return (
@@ -31,25 +23,6 @@ function App() {
                             <span className="font-bold text-sm text-gray-900 dark:text-white tracking-tight">QQ Version</span>
                         </div>
 
-                        <nav className="flex items-center bg-gray-100/80 dark:bg-white/[0.06] rounded-lg p-0.5">
-                            {tabs.map((tab) => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setCurrentPage(tab.id)}
-                                    className={`
-                                        relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200 cursor-pointer
-                                        ${currentPage === tab.id
-                                            ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm'
-                                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                                        }
-                                    `}
-                                >
-                                    {tab.icon}
-                                    <span className="hidden sm:inline">{tab.label}</span>
-                                </button>
-                            ))}
-                        </nav>
-
                         <a
                             href="https://github.com/AQiaoYo/napcat-plugin-qq-version"
                             target="_blank"
@@ -63,8 +36,8 @@ function App() {
             </header>
 
             <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-                <div key={currentPage} className="page-enter">
-                    {currentPage === 'install' ? <InstallPage /> : <ConfigPage />}
+                <div className="page-enter">
+                    <InstallPage />
                 </div>
             </main>
         </div>

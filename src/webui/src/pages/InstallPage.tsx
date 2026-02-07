@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { noAuthFetch } from '../utils/api'
 import { showToast } from '../hooks/useToast'
-import type { QQInstallInfo, InstallProgress, VersionRecommended, QQDownloadLink } from '../types'
+import type { QQInstallInfo, InstallProgress, VersionRecommended } from '../types'
 import {
     IconDownload, IconRefresh, IconAlert, IconPackage,
     IconWindows, IconLinux, IconApple, IconServer, IconFolder, IconTag, IconCpu,
@@ -95,7 +95,6 @@ export default function InstallPage() {
     const [progress, setProgress] = useState<InstallProgress | null>(null)
     const [loading, setLoading] = useState(true)
     const [installing, setInstalling] = useState(false)
-    const [selectedLink, setSelectedLink] = useState<QQDownloadLink | null>(null)
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
     const fetchInstallInfo = useCallback(async () => {
@@ -110,12 +109,9 @@ export default function InstallPage() {
             const res = await noAuthFetch<VersionRecommended>('/version/recommended')
             if (res.code === 0 && res.data) {
                 setVersionData(res.data)
-                if (res.data.downloadLinks?.length > 0 && !selectedLink) {
-                    setSelectedLink(res.data.downloadLinks[0])
-                }
             }
         } catch { /* ignore */ }
-    }, [selectedLink])
+    }, [])
 
     const fetchProgress = useCallback(async () => {
         try {
@@ -149,12 +145,15 @@ export default function InstallPage() {
         finally { setLoading(false) }
     }
 
+    // 自动使用后端返回的最佳安装包（只有一个）
+    const bestLink = versionData?.downloadLinks?.[0] || null
+
     const handleInstall = async () => {
-        if (!selectedLink) { showToast('请先选择安装包', 'warning'); return }
+        if (!bestLink) { showToast('没有可用的安装包', 'warning'); return }
         if (installing) return
         setInstalling(true)
         try {
-            const res = await noAuthFetch('/install/start', { method: 'POST', body: JSON.stringify(selectedLink) })
+            const res = await noAuthFetch('/install/start', { method: 'POST', body: JSON.stringify(bestLink) })
             if (res.code !== 0) { showToast(res.message || '启动安装失败', 'error'); setInstalling(false); return }
             showToast('安装任务已启动', 'info')
             pollRef.current = setInterval(fetchProgress, 800)
@@ -175,6 +174,7 @@ export default function InstallPage() {
     const isActive = progress && ['downloading', 'extracting', 'installing'].includes(progress.stage)
     const isDone = progress?.stage === 'done'
     const isError = progress?.stage === 'error'
+    const isAlreadyInstalled = versionData?.isAlreadyInstalled === true
 
     if (loading && !installInfo) {
         return (
@@ -229,20 +229,20 @@ export default function InstallPage() {
             {autoInstallSupported ? (
                 <LinuxInstallPanel
                     versionData={versionData}
-                    selectedLink={selectedLink}
-                    onSelectLink={setSelectedLink}
+                    bestLink={bestLink}
                     progress={progress}
                     isActive={!!isActive}
                     isDone={!!isDone}
                     isError={!!isError}
                     installing={installing}
+                    isAlreadyInstalled={isAlreadyInstalled}
                     onInstall={handleInstall}
                     onReset={handleReset}
                 />
             ) : (isWindows || isMac) ? (
                 <ManualDownloadPanel
                     platform={isWindows ? 'windows' : 'mac'}
-                    links={versionData?.downloadLinks || []}
+                    versionData={versionData}
                 />
             ) : (
                 <div className="rounded-xl border border-gray-200/70 dark:border-white/[0.06] bg-white dark:bg-white/[0.03] p-10 flex flex-col items-center text-center">
@@ -281,16 +281,14 @@ function IconShieldSmall() {
     )
 }
 
-function LinuxInstallPanel({ versionData, selectedLink, onSelectLink, progress, isActive, isDone, isError, installing, onInstall, onReset }: {
+function LinuxInstallPanel({ versionData, bestLink, progress, isActive, isDone, isError, installing, isAlreadyInstalled, onInstall, onReset }: {
     versionData: VersionRecommended | null
-    selectedLink: QQDownloadLink | null
-    onSelectLink: (link: QQDownloadLink) => void
+    bestLink: { label: string; url: string; format: string } | null
     progress: InstallProgress | null
     isActive: boolean; isDone: boolean; isError: boolean; installing: boolean
+    isAlreadyInstalled: boolean
     onInstall: () => void; onReset: () => void
 }) {
-    const links = versionData?.downloadLinks || []
-
     return (
         <div className="rounded-xl border border-gray-200/70 dark:border-white/[0.06] bg-white dark:bg-white/[0.03] overflow-hidden">
             <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-gray-100 dark:border-white/[0.04]">
@@ -304,6 +302,20 @@ function LinuxInstallPanel({ versionData, selectedLink, onSelectLink, progress, 
             </div>
 
             <div className="p-5 space-y-5">
+                {/* 已是最新版本提示 */}
+                {isAlreadyInstalled && !isActive && !isDone && !isError && (
+                    <div className="flex items-center gap-3 p-4 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/[0.06]">
+                        <IconCheckCircle size={20} className="text-emerald-500 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">已是推荐版本</p>
+                            <p className="text-xs text-emerald-600/70 dark:text-emerald-400/60 mt-0.5">
+                                当前 QQ 版本已满足 NapCat {versionData?.releaseTag || ''} 的要求，无需更新
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                {/* 安装进度 */}
                 {isActive && progress && (
                     <div className="space-y-2.5 p-4 rounded-xl bg-gray-50 dark:bg-white/[0.03] border border-gray-100 dark:border-white/[0.04]">
                         <div className="flex items-center justify-between text-xs">
@@ -324,6 +336,7 @@ function LinuxInstallPanel({ versionData, selectedLink, onSelectLink, progress, 
                     </div>
                 )}
 
+                {/* 完成/失败状态 */}
                 {(isDone || isError) && (
                     <div className={`flex items-center gap-3 p-4 rounded-xl border ${isDone
                         ? 'border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/[0.06]'
@@ -344,56 +357,46 @@ function LinuxInstallPanel({ versionData, selectedLink, onSelectLink, progress, 
                     </div>
                 )}
 
-                {links.length > 0 && (
-                    <div className="space-y-2.5">
-                        <p className="text-xs text-gray-500 dark:text-gray-400">选择要安装的版本：</p>
-                        <div className="space-y-2">
-                            {links.map((link, idx) => (
-                                <div
-                                    key={idx}
-                                    onClick={() => onSelectLink(link)}
-                                    className={`group flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${selectedLink?.url === link.url
-                                        ? 'border-brand-300 dark:border-brand-500/40 bg-brand-50/50 dark:bg-brand-500/[0.06]'
-                                        : 'border-gray-150 dark:border-white/[0.06] hover:border-gray-300 dark:hover:border-white/[0.1] hover:bg-gray-50/50 dark:hover:bg-white/[0.02]'
-                                        }`}
-                                >
-                                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${selectedLink?.url === link.url
-                                        ? 'border-brand-500 bg-brand-500'
-                                        : 'border-gray-300 dark:border-gray-600'
-                                        }`}>
-                                        {selectedLink?.url === link.url && (
-                                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                                        )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{link.label}</div>
-                                        <div className="text-[10px] text-gray-400 truncate mt-0.5">{link.url}</div>
-                                    </div>
-                                    <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.06] text-gray-500 dark:text-gray-400 flex-shrink-0">
-                                        {link.format}
-                                    </span>
-                                </div>
-                            ))}
+                {/* 自动选择的安装包信息（只显示一个，不可选择） */}
+                {bestLink && !isAlreadyInstalled && (
+                    <div className="p-3.5 rounded-lg border border-gray-150 dark:border-white/[0.06] bg-gray-50/50 dark:bg-white/[0.02]">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-brand-50 dark:bg-brand-500/10 flex items-center justify-center text-brand-500 flex-shrink-0">
+                                <IconLinux size={16} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{bestLink.label}</div>
+                                <div className="text-[10px] text-gray-400 truncate mt-0.5">{bestLink.url}</div>
+                            </div>
+                            <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 flex-shrink-0">
+                                {bestLink.format}
+                            </span>
                         </div>
                     </div>
                 )}
 
-                <button
-                    onClick={onInstall}
-                    disabled={installing || !selectedLink || isActive}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-sm shadow-brand-500/20 hover:shadow-brand-500/30"
-                >
-                    {installing
-                        ? <><div className="loading-spinner !w-3.5 !h-3.5 !border-[1.5px] !border-white !border-t-transparent" /> 正在处理...</>
-                        : <><IconDownload size={15} /> 开始安装</>
-                    }
-                </button>
+                {/* 安装按钮 */}
+                {!isAlreadyInstalled && (
+                    <button
+                        onClick={onInstall}
+                        disabled={installing || !bestLink || isActive}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-sm shadow-brand-500/20 hover:shadow-brand-500/30"
+                    >
+                        {installing
+                            ? <><div className="loading-spinner !w-3.5 !h-3.5 !border-[1.5px] !border-white !border-t-transparent" /> 正在处理...</>
+                            : <><IconDownload size={15} /> 开始安装</>
+                        }
+                    </button>
+                )}
             </div>
         </div>
     )
 }
 
-function ManualDownloadPanel({ platform, links }: { platform: 'windows' | 'mac'; links: QQDownloadLink[] }) {
+function ManualDownloadPanel({ platform, versionData }: { platform: 'windows' | 'mac'; versionData: VersionRecommended | null }) {
+    const bestLink = versionData?.downloadLinks?.[0] || null
+    const isAlreadyInstalled = versionData?.isAlreadyInstalled === true
+
     return (
         <div className="rounded-xl border border-gray-200/70 dark:border-white/[0.06] bg-white dark:bg-white/[0.03] overflow-hidden">
             <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-gray-100 dark:border-white/[0.04]">
@@ -406,36 +409,46 @@ function ManualDownloadPanel({ platform, links }: { platform: 'windows' | 'mac';
             </div>
 
             <div className="p-5 space-y-4">
-                <div className="flex items-start gap-2.5 p-3.5 rounded-lg bg-amber-50 dark:bg-amber-500/[0.06] border border-amber-200/60 dark:border-amber-500/15">
-                    <IconAlert size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-amber-800 dark:text-amber-300/90 leading-relaxed">
-                        当前平台不支持自动安装。请下载对应安装包手动安装，完成后重启 NapCat 即可。
-                    </p>
-                </div>
+                {/* 已是最新版本提示 */}
+                {isAlreadyInstalled ? (
+                    <div className="flex items-center gap-3 p-4 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/[0.06]">
+                        <IconCheckCircle size={20} className="text-emerald-500 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">已是推荐版本</p>
+                            <p className="text-xs text-emerald-600/70 dark:text-emerald-400/60 mt-0.5">
+                                当前 QQ 版本已满足 NapCat {versionData?.releaseTag || ''} 的要求，无需更新
+                            </p>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <div className="flex items-start gap-2.5 p-3.5 rounded-lg bg-amber-50 dark:bg-amber-500/[0.06] border border-amber-200/60 dark:border-amber-500/15">
+                            <IconAlert size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                            <p className="text-xs text-amber-800 dark:text-amber-300/90 leading-relaxed">
+                                当前平台不支持自动安装。请下载对应安装包手动安装，完成后重启 NapCat 即可。
+                            </p>
+                        </div>
 
-                {links.length > 0 ? (
-                    <div className="space-y-2">
-                        {links.map((link, idx) => (
+                        {bestLink ? (
                             <a
-                                key={idx}
-                                href={link.url}
+                                href={bestLink.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="group flex items-center gap-3 p-3.5 rounded-lg border border-gray-150 dark:border-white/[0.06] hover:border-brand-300 dark:hover:border-brand-500/30 hover:bg-brand-50/30 dark:hover:bg-brand-500/[0.03] transition-all no-underline"
                             >
                                 <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-white/[0.06] group-hover:bg-brand-100 dark:group-hover:bg-brand-500/10 flex items-center justify-center text-gray-400 group-hover:text-brand-500 transition-colors flex-shrink-0">
-                                    <PlatformIcon platform={link.platform} size={16} />
+                                    <PlatformIcon platform={bestLink.platform} size={16} />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors truncate">{link.label}</div>
-                                    <div className="text-[10px] text-gray-400 uppercase mt-0.5">{link.format} 格式</div>
+                                    <div className="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors truncate">{bestLink.label}</div>
+                                    <div className="text-[10px] text-gray-400 uppercase mt-0.5">{bestLink.format} 格式</div>
                                 </div>
                                 <IconExternalLink size={14} className="text-gray-300 dark:text-gray-600 group-hover:text-brand-400 transition-colors flex-shrink-0" />
                             </a>
-                        ))}
-                    </div>
-                ) : (
-                    <p className="text-xs text-gray-400 text-center py-4">暂无可用的下载链接</p>
+                        ) : (
+                            <p className="text-xs text-gray-400 text-center py-4">暂无可用的下载链接</p>
+                        )}
+                    </>
                 )}
             </div>
         </div>
