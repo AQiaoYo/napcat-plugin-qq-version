@@ -22,6 +22,7 @@ import { initConfigUI } from './config';
 import { pluginState } from './core/state';
 import { handleMessage } from './handlers/message-handler';
 import { registerApiRoutes } from './services/api-service';
+import { initVersionInfo } from './services/github-service';
 import type { PluginConfig } from './types';
 
 /** 框架配置 UI Schema，NapCat WebUI 会读取此导出来展示配置面板 */
@@ -37,6 +38,9 @@ const plugin_init = async (ctx: NapCatPluginContext) => {
         pluginState.initFromContext(ctx);
         pluginState.loadConfig(ctx);
         pluginState.log('info', `初始化完成 | name=${ctx.pluginName}`);
+
+        // 初始化版本信息（通过 OneBot API 获取 NapCat 版本）
+        await initVersionInfo(ctx);
 
         // 生成配置 schema 并导出（用于 NapCat WebUI 配置面板）
         try {

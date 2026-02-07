@@ -12,6 +12,21 @@
 import type { NapCatPluginContext, PluginHttpRequest, PluginHttpResponse } from 'napcat-types/napcat-onebot/network/plugin/types';
 import type { OB11Group } from 'napcat-types/napcat-onebot/types';
 import { pluginState } from '../core/state';
+import {
+    getVersionMatchResult,
+    getRecommendedLinks,
+    getCurrentQQInfo,
+    getNapCatVersion,
+    getCurrentPlatform,
+    clearCache
+} from './github-service';
+import {
+    getQQInstallInfo,
+    getInstallProgress,
+    resetInstallProgress,
+    startInstall,
+    isInstallRunning
+} from './install-service';
 
 /**
  * 解析请求体
@@ -150,7 +165,143 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
         }
     });
 
-    // TODO: 在这里添加你的自定义 API 路由
+    // ==================== QQ 版本查询接口（无认证）====================
+
+    // 获取完整版本匹配信息（所有平台下载链接）
+    router.getNoAuth('/version', async (_req: PluginHttpRequest, res: PluginHttpResponse) => {
+        try {
+            const result = await getVersionMatchResult(ctx);
+            if (!result) {
+                return res.status(502).json({ code: -1, message: '获取 Release 信息失败' });
+            }
+            res.json({ code: 0, data: result });
+        } catch (e) {
+            pluginState.log('error', '获取版本信息失败:', e);
+            res.status(500).json({ code: -1, message: String(e) });
+        }
+    });
+
+    // 获取当前平台推荐的下载链接
+    router.getNoAuth('/version/recommended', async (_req: PluginHttpRequest, res: PluginHttpResponse) => {
+        try {
+            const { result, recommended } = await getRecommendedLinks(ctx);
+            if (!result) {
+                return res.status(502).json({ code: -1, message: '获取 Release 信息失败' });
+            }
+            res.json({
+                code: 0,
+                data: {
+                    ...result,
+                    downloadLinks: recommended,
+                    platform: getCurrentPlatform()
+                }
+            });
+        } catch (e) {
+            pluginState.log('error', '获取推荐版本失败:', e);
+            res.status(500).json({ code: -1, message: String(e) });
+        }
+    });
+
+    // 获取当前运行环境信息
+    router.getNoAuth('/version/current', (_req: PluginHttpRequest, res: PluginHttpResponse) => {
+        try {
+            const qqInfo = getCurrentQQInfo(ctx);
+            res.json({
+                code: 0,
+                data: {
+                    napcatVersion: getNapCatVersion(),
+                    qqVersion: qqInfo.version,
+                    qqBuild: qqInfo.build,
+                    platform: getCurrentPlatform()
+                }
+            });
+        } catch (e) {
+            pluginState.log('error', '获取当前版本信息失败:', e);
+            res.status(500).json({ code: -1, message: String(e) });
+        }
+    });
+
+    // 清除缓存并重新获取
+    router.postNoAuth('/version/refresh', async (_req: PluginHttpRequest, res: PluginHttpResponse) => {
+        try {
+            clearCache();
+            const result = await getVersionMatchResult(ctx);
+            if (!result) {
+                return res.status(502).json({ code: -1, message: '刷新失败' });
+            }
+            res.json({ code: 0, data: result });
+        } catch (e) {
+            pluginState.log('error', '刷新版本信息失败:', e);
+            res.status(500).json({ code: -1, message: String(e) });
+        }
+    });
+
+    // ==================== QQ 安装接口（无认证）====================
+
+    // 获取 QQ 安装信息（安装路径、当前版本、平台等）
+    router.getNoAuth('/install/info', (_req: PluginHttpRequest, res: PluginHttpResponse) => {
+        try {
+            const info = getQQInstallInfo(ctx);
+            res.json({ code: 0, data: info });
+        } catch (e) {
+            pluginState.log('error', '获取安装信息失败:', e);
+            res.status(500).json({ code: -1, message: String(e) });
+        }
+    });
+
+    // 获取安装进度
+    router.getNoAuth('/install/progress', (_req: PluginHttpRequest, res: PluginHttpResponse) => {
+        try {
+            const progress = getInstallProgress();
+            res.json({ code: 0, data: progress });
+        } catch (e) {
+            res.status(500).json({ code: -1, message: String(e) });
+        }
+    });
+
+    // 开始安装 QQ（传入下载链接信息）
+    router.postNoAuth('/install/start', async (req: PluginHttpRequest, res: PluginHttpResponse) => {
+        try {
+            if (isInstallRunning()) {
+                return res.status(409).json({ code: -1, message: '已有安装任务正在进行中' });
+            }
+
+            const body = parseBody(req);
+            const { url, label, platform, arch, format } = body;
+
+            if (!url || typeof url !== 'string') {
+                return res.status(400).json({ code: -1, message: '缺少下载链接 url' });
+            }
+
+            const link = {
+                url: url as string,
+                label: (label as string) || '',
+                platform: (platform as 'windows' | 'linux' | 'mac' | 'unknown') || 'unknown',
+                arch: (arch as 'x64' | 'arm64' | 'unknown') || 'unknown',
+                format: (format as 'exe' | 'deb' | 'rpm' | 'dmg' | 'unknown') || 'unknown',
+            };
+
+            // 异步执行安装，立即返回
+            startInstall(ctx, link).catch((err) => {
+                pluginState.log('error', '安装任务异常:', err);
+            });
+
+            res.json({ code: 0, message: '安装任务已启动' });
+        } catch (e) {
+            pluginState.log('error', '启动安装失败:', e);
+            res.status(500).json({ code: -1, message: String(e) });
+        }
+    });
+
+    // 重置安装状态
+    router.postNoAuth('/install/reset', (_req: PluginHttpRequest, res: PluginHttpResponse) => {
+        try {
+            resetInstallProgress();
+            res.json({ code: 0, message: 'ok' });
+        } catch (e) {
+            res.status(500).json({ code: -1, message: String(e) });
+        }
+    });
 
     pluginState.logDebug('API 路由注册完成');
 }
