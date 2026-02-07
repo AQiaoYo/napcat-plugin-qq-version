@@ -87,6 +87,23 @@ function isMacPlatform(platform?: string): boolean {
     return platform === 'mac' || platform === 'darwin'
 }
 
+function launchModeLabel(mode?: string): string {
+    switch (mode) {
+        case 'docker': return 'Docker'
+        case 'non-invasive': return '非入侵式'
+        case 'invasive': return '入侵式'
+        default: return '未知'
+    }
+}
+
+function launchModeBadge(mode?: string): string | undefined {
+    switch (mode) {
+        case 'docker': return 'docker'
+        case 'non-invasive': return 'non-invasive'
+        default: return undefined
+    }
+}
+
 /* ==================== 主组件 ==================== */
 
 export default function InstallPage() {
@@ -96,6 +113,7 @@ export default function InstallPage() {
     const [loading, setLoading] = useState(true)
     const [installing, setInstalling] = useState(false)
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+    const toastShownRef = useRef(false)
 
     const fetchInstallInfo = useCallback(async () => {
         try {
@@ -121,8 +139,11 @@ export default function InstallPage() {
                 if (res.data.stage === 'done' || res.data.stage === 'error') {
                     setInstalling(false)
                     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
-                    if (res.data.stage === 'done') showToast('QQ 安装完成，重启后生效', 'success')
-                    else if (res.data.stage === 'error') showToast(res.data.error || '安装失败', 'error')
+                    if (!toastShownRef.current) {
+                        toastShownRef.current = true
+                        if (res.data.stage === 'done') showToast('QQ 安装完成，重启后生效', 'success')
+                        else if (res.data.stage === 'error') showToast(res.data.error || '安装失败', 'error')
+                    }
                 }
             }
         } catch { /* ignore */ }
@@ -152,6 +173,7 @@ export default function InstallPage() {
         if (!bestLink) { showToast('没有可用的安装包', 'warning'); return }
         if (installing) return
         setInstalling(true)
+        toastShownRef.current = false
         try {
             const res = await noAuthFetch('/install/start', { method: 'POST', body: JSON.stringify(bestLink) })
             if (res.code !== 0) { showToast(res.message || '启动安装失败', 'error'); setInstalling(false); return }
@@ -214,7 +236,7 @@ export default function InstallPage() {
                     <EnvItem icon={<PlatformIcon platform={currentPlatform} size={14} />} label="平台" value={installInfo ? `${platformLabel(installInfo.platform)} ${installInfo.arch}` : '-'} />
                     <EnvItem icon={<IconFolder size={14} />} label="安装目录" value={installInfo?.installDir || '-'} mono />
                     <EnvItem icon={<IconCpu size={14} />} label="推荐版本" value={versionData?.releaseTag || '-'} accent />
-                    <EnvItem icon={<IconBox size={14} />} label="运行模式" value={installInfo?.isDocker ? 'Docker' : installInfo?.isRootless ? 'Rootless' : '系统级'} badge={installInfo?.isDocker ? 'docker' : undefined} />
+                    <EnvItem icon={<IconBox size={14} />} label="启动模式" value={launchModeLabel(installInfo?.launchMode)} badge={launchModeBadge(installInfo?.launchMode)} />
                 </div>
             </div>
 
@@ -237,7 +259,7 @@ export default function InstallPage() {
                     isError={!!isError}
                     installing={installing}
                     isAlreadyInstalled={isAlreadyInstalled}
-                    isDocker={installInfo?.isDocker || false}
+                    launchMode={installInfo?.launchMode || 'unknown'}
                     onInstall={handleInstall}
                     onReset={handleReset}
                 />
@@ -275,6 +297,9 @@ function EnvItem({ icon, label, value, mono, accent, badge }: {
                 {badge === 'docker' && (
                     <span className="text-[9px] px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold flex-shrink-0">🐳</span>
                 )}
+                {badge === 'non-invasive' && (
+                    <span className="text-[9px] px-1 py-0.5 rounded bg-teal-100 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold flex-shrink-0">🛡️</span>
+                )}
             </div>
         </div>
     )
@@ -288,13 +313,13 @@ function IconShieldSmall() {
     )
 }
 
-function LinuxInstallPanel({ versionData, bestLink, progress, isActive, isDone, isError, installing, isAlreadyInstalled, isDocker, onInstall, onReset }: {
+function LinuxInstallPanel({ versionData, bestLink, progress, isActive, isDone, isError, installing, isAlreadyInstalled, launchMode, onInstall, onReset }: {
     versionData: VersionRecommended | null
     bestLink: { label: string; url: string; format: string } | null
     progress: InstallProgress | null
     isActive: boolean; isDone: boolean; isError: boolean; installing: boolean
     isAlreadyInstalled: boolean
-    isDocker: boolean
+    launchMode: string
     onInstall: () => void; onReset: () => void
 }) {
     return (
@@ -306,8 +331,11 @@ function LinuxInstallPanel({ versionData, bestLink, progress, isActive, isDone, 
                 <div>
                     <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">自动安装更新</span>
                     <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">Linux</span>
-                    {isDocker && (
+                    {launchMode === 'docker' && (
                         <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium">Docker</span>
+                    )}
+                    {launchMode === 'non-invasive' && (
+                        <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400 font-medium">非入侵式</span>
                     )}
                 </div>
             </div>
