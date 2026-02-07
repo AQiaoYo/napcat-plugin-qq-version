@@ -259,9 +259,17 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
         }
     });
 
-    // 开始安装 QQ（传入下载链接信息）
+    // 开始安装 QQ（传入下载链接信息，仅 Linux 支持）
     router.postNoAuth('/install/start', async (req: PluginHttpRequest, res: PluginHttpResponse) => {
         try {
+            // Windows / Mac 不支持自动安装
+            if (process.platform === 'win32') {
+                return res.status(400).json({ code: -1, message: 'Windows 平台不支持自动安装，请手动下载安装包进行安装' });
+            }
+            if (process.platform === 'darwin') {
+                return res.status(400).json({ code: -1, message: 'macOS 平台不支持自动安装，请手动下载 DMG 安装包进行安装' });
+            }
+
             if (isInstallRunning()) {
                 return res.status(409).json({ code: -1, message: '已有安装任务正在进行中' });
             }
@@ -282,7 +290,7 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
             };
 
             // 异步执行安装，立即返回
-            startInstall(ctx, link).catch((err) => {
+            startInstall(ctx, link).catch((err: unknown) => {
                 pluginState.log('error', '安装任务异常:', err);
             });
 
