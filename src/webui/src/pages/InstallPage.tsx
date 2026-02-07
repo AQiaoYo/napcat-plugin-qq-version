@@ -71,6 +71,21 @@ function progressBarColor(stage: string): string {
     }
 }
 
+/** 判断当前平台是否支持自动安装（仅 Linux） */
+function isAutoInstallSupported(platform?: string): boolean {
+    return platform === 'linux'
+}
+
+/** 判断是否为 Windows 平台 */
+function isWindowsPlatform(platform?: string): boolean {
+    return platform === 'windows' || platform === 'win32'
+}
+
+/** 判断是否为 Mac 平台 */
+function isMacPlatform(platform?: string): boolean {
+    return platform === 'mac' || platform === 'darwin'
+}
+
 export default function InstallPage() {
     const [installInfo, setInstallInfo] = useState<QQInstallInfo | null>(null)
     const [versionData, setVersionData] = useState<VersionRecommended | null>(null)
@@ -108,7 +123,6 @@ export default function InstallPage() {
             const res = await noAuthFetch<InstallProgress>('/install/progress')
             if (res.code === 0 && res.data) {
                 setProgress(res.data)
-                // 安装完成或失败时停止轮询
                 if (res.data.stage === 'done' || res.data.stage === 'error') {
                     setInstalling(false)
                     if (pollRef.current) {
@@ -132,7 +146,6 @@ export default function InstallPage() {
             .finally(() => setLoading(false))
     }, [fetchInstallInfo, fetchVersion, fetchProgress])
 
-    // 安装中轮询进度
     useEffect(() => {
         return () => {
             if (pollRef.current) clearInterval(pollRef.current)
@@ -153,13 +166,12 @@ export default function InstallPage() {
         }
     }
 
-    // 开始安装
+    // 开始安装（仅 Linux）
     const handleInstall = async () => {
         if (!selectedLink) {
             showToast('请先选择安装包', 'warning')
             return
         }
-
         if (installing) return
 
         setInstalling(true)
@@ -174,9 +186,8 @@ export default function InstallPage() {
                 return
             }
             showToast('安装任务已启动', 'info')
-            // 开始轮询进度
             pollRef.current = setInterval(fetchProgress, 800)
-        } catch (e) {
+        } catch {
             showToast('启动安装失败', 'error')
             setInstalling(false)
         }
@@ -203,9 +214,17 @@ export default function InstallPage() {
         )
     }
 
+    const currentPlatform = installInfo?.platform || versionData?.platform?.platform || ''
+    const autoInstallSupported = isAutoInstallSupported(currentPlatform)
+    const isWindows = isWindowsPlatform(currentPlatform)
+    const isMac = isMacPlatform(currentPlatform)
+
     const isActive = progress && (progress.stage === 'downloading' || progress.stage === 'extracting' || progress.stage === 'installing')
     const isDone = progress?.stage === 'done'
     const isError = progress?.stage === 'error'
+
+    // 所有下载链接（用于 Windows/Mac 手动下载展示）
+    const allDownloadLinks = versionData?.downloadLinks || []
 
     return (
         <div className="space-y-6 stagger-children">
@@ -243,170 +262,296 @@ export default function InstallPage() {
                 </div>
             )}
 
-            {/* 安装包选择 */}
-            <div className="card p-5 hover-lift">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
-                    <IconDownload size={16} className="text-gray-400" />
-                    选择安装包
-                </h3>
-
-                {versionData?.downloadLinks && versionData.downloadLinks.length > 0 ? (
-                    <div className="space-y-2">
-                        {versionData.downloadLinks.map((link, idx) => (
-                            <label
-                                key={idx}
-                                className={`
-                                    flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-200
-                                    ${selectedLink?.url === link.url
-                                        ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                                    }
-                                    ${isActive ? 'opacity-60 pointer-events-none' : ''}
-                                `}
-                            >
-                                <input
-                                    type="radio"
-                                    name="install-link"
-                                    checked={selectedLink?.url === link.url}
-                                    onChange={() => setSelectedLink(link)}
-                                    className="accent-primary"
-                                    disabled={!!isActive}
-                                />
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                                        {link.label}
-                                    </div>
-                                    <div className="text-xs text-gray-400 truncate mt-0.5">{link.url}</div>
-                                </div>
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
-                                        {platformLabel(link.platform)}
-                                    </span>
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
-                                        {link.arch}
-                                    </span>
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
-                                        {formatLabel(link.format)}
-                                    </span>
-                                </div>
-                            </label>
-                        ))}
+            {/* ==================== Windows / Mac: 手动下载提示 ==================== */}
+            {(isWindows || isMac) && (
+                <>
+                    <div className="card p-4 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
+                        <div className="flex items-start gap-2">
+                            <IconAlert size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                            <div className="text-xs text-amber-700 dark:text-amber-300 space-y-1">
+                                <p className="font-semibold">
+                                    {isWindows ? 'Windows' : 'macOS'} 平台不支持自动安装
+                                </p>
+                                <p>请从下方选择对应的安装包链接，手动下载并安装。安装完成后重启 NapCat 即可生效。</p>
+                                {isWindows && (
+                                    <p>Windows 用户请下载 <strong>.exe</strong> 安装包，双击运行即可完成安装。</p>
+                                )}
+                                {isMac && (
+                                    <p>macOS 用户请下载 <strong>.dmg</strong> 安装包，打开后拖拽到 Applications 文件夹即可。</p>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                ) : (
-                    <div className="text-center py-8 text-gray-400 text-sm">
-                        {loading ? '加载中...' : '未找到当前平台的推荐安装包'}
-                    </div>
-                )}
-            </div>
 
-            {/* 安装进度 */}
-            {(isActive || isDone || isError) && progress && (
-                <div className="card p-5 hover-lift animate-fade-in-up">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                            {isDone ? <IconCheck size={16} className="text-emerald-500" /> :
-                                isError ? <IconAlert size={16} className="text-red-500" /> :
-                                    <div className="loading-spinner !w-4 !h-4 !border-[1.5px]" />}
-                            安装进度
+                    {/* 下载链接列表 */}
+                    <div className="card p-5 hover-lift">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+                            <IconDownload size={16} className="text-gray-400" />
+                            下载链接
                         </h3>
-                        <span className={`text-xs font-medium ${stageColor(progress.stage)}`}>
-                            {stageLabel(progress.stage)}
-                        </span>
+
+                        {allDownloadLinks.length > 0 ? (
+                            <div className="space-y-2">
+                                {allDownloadLinks.map((link, idx) => (
+                                    <a
+                                        key={idx}
+                                        href={link.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="
+                                            flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-200
+                                            border-gray-200 dark:border-gray-700 hover:border-primary dark:hover:border-primary
+                                            hover:bg-primary/5 dark:hover:bg-primary/10 no-underline group
+                                        "
+                                    >
+                                        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                                            <IconDownload size={14} className="text-primary" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate group-hover:text-primary transition-colors">
+                                                {link.label}
+                                            </div>
+                                            <div className="text-xs text-gray-400 truncate mt-0.5">{link.url}</div>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
+                                                {platformLabel(link.platform)}
+                                            </span>
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
+                                                {link.arch}
+                                            </span>
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
+                                                {formatLabel(link.format)}
+                                            </span>
+                                        </div>
+                                        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300 dark:text-gray-600 group-hover:text-primary transition-colors flex-shrink-0">
+                                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                            <polyline points="15 3 21 3 21 9" />
+                                            <line x1="10" y1="14" x2="21" y2="3" />
+                                        </svg>
+                                    </a>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 text-gray-400 text-sm">
+                                {loading ? '加载中...' : '未找到可用的下载链接'}
+                            </div>
+                        )}
                     </div>
 
-                    {/* 进度条 */}
-                    <div className="w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden mb-3">
-                        <div
-                            className={`h-full rounded-full transition-all duration-500 ease-out ${progressBarColor(progress.stage)}`}
-                            style={{ width: `${progress.percent}%` }}
-                        />
-                    </div>
-
-                    {/* 进度详情 */}
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span>{progress.message}</span>
-                        <span>{progress.percent}%</span>
-                    </div>
-
-                    {/* 下载速度 */}
-                    {progress.stage === 'downloading' && (
-                        <div className="flex items-center justify-between text-xs text-gray-400 mt-2">
-                            <span>
-                                {formatBytes(progress.downloadedBytes || 0)}
-                                {progress.totalBytes ? ` / ${formatBytes(progress.totalBytes)}` : ''}
-                            </span>
-                            <span>{formatSpeed(progress.speed || 0)}</span>
+                    {versionData?.releaseUrl && (
+                        <div className="flex items-center gap-3">
+                            <a
+                                href={versionData.releaseUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn btn-ghost px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 no-underline"
+                            >
+                                查看 Release 页面 →
+                            </a>
                         </div>
                     )}
 
-                    {/* 错误信息 */}
-                    {isError && progress.error && (
-                        <div className="mt-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-                            <p className="text-xs text-red-600 dark:text-red-400">{progress.error}</p>
+                    <div className="card p-4 bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800">
+                        <div className="flex items-start gap-2">
+                            <IconInfo size={14} className="text-blue-400 mt-0.5 flex-shrink-0" />
+                            <div className="text-xs text-blue-600 dark:text-blue-400 space-y-1">
+                                <p>• 请下载与当前平台和架构匹配的安装包。</p>
+                                {isWindows && (
+                                    <>
+                                        <p>• 下载 <strong>.exe</strong> 安装包后，双击运行即可覆盖安装。</p>
+                                        <p>• 安装完成后需要<strong>重启 NapCat</strong> 才能生效。</p>
+                                    </>
+                                )}
+                                {isMac && (
+                                    <>
+                                        <p>• 下载 <strong>.dmg</strong> 文件后，打开并将 QQ 拖入 Applications 文件夹。</p>
+                                        <p>• 安装完成后需要<strong>重启 NapCat</strong> 才能生效。</p>
+                                    </>
+                                )}
+                            </div>
                         </div>
-                    )}
-                </div>
+                    </div>
+                </>
             )}
 
-            {/* 操作按钮 */}
-            <div className="flex items-center gap-3">
-                <button
-                    onClick={handleInstall}
-                    disabled={!selectedLink || !!isActive || installing}
-                    className={`
-                        btn px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
-                        flex items-center gap-2
-                        ${!selectedLink || isActive || installing
-                            ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
-                            : 'bg-primary text-white hover:opacity-90 shadow-md hover:shadow-lg'
-                        }
-                    `}
-                >
-                    {installing || isActive ? (
-                        <>
-                            <div className="loading-spinner !w-4 !h-4 !border-[1.5px] !border-current" />
-                            安装中...
-                        </>
-                    ) : (
-                        <>
-                            <IconDownload size={15} />
-                            覆盖安装
-                        </>
+            {/* ==================== Linux: 自动安装 ==================== */}
+            {autoInstallSupported && (
+                <>
+                    {/* 安装包选择 */}
+                    <div className="card p-5 hover-lift">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+                            <IconDownload size={16} className="text-gray-400" />
+                            选择安装包
+                        </h3>
+
+                        {versionData?.downloadLinks && versionData.downloadLinks.length > 0 ? (
+                            <div className="space-y-2">
+                                {versionData.downloadLinks.map((link, idx) => (
+                                    <label
+                                        key={idx}
+                                        className={`
+                                            flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-200
+                                            ${selectedLink?.url === link.url
+                                                ? 'border-primary bg-primary/5 dark:bg-primary/10'
+                                                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                            }
+                                            ${isActive ? 'opacity-60 pointer-events-none' : ''}
+                                        `}
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="install-link"
+                                            checked={selectedLink?.url === link.url}
+                                            onChange={() => setSelectedLink(link)}
+                                            className="accent-primary"
+                                            disabled={!!isActive}
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                                                {link.label}
+                                            </div>
+                                            <div className="text-xs text-gray-400 truncate mt-0.5">{link.url}</div>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
+                                                {platformLabel(link.platform)}
+                                            </span>
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
+                                                {link.arch}
+                                            </span>
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
+                                                {formatLabel(link.format)}
+                                            </span>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 text-gray-400 text-sm">
+                                {loading ? '加载中...' : '未找到当前平台的推荐安装包'}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 安装进度 */}
+                    {(isActive || isDone || isError) && progress && (
+                        <div className="card p-5 hover-lift animate-fade-in-up">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                                    {isDone ? <IconCheck size={16} className="text-emerald-500" /> :
+                                        isError ? <IconAlert size={16} className="text-red-500" /> :
+                                            <div className="loading-spinner !w-4 !h-4 !border-[1.5px]" />}
+                                    安装进度
+                                </h3>
+                                <span className={`text-xs font-medium ${stageColor(progress.stage)}`}>
+                                    {stageLabel(progress.stage)}
+                                </span>
+                            </div>
+
+                            <div className="w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden mb-3">
+                                <div
+                                    className={`h-full rounded-full transition-all duration-500 ease-out ${progressBarColor(progress.stage)}`}
+                                    style={{ width: `${progress.percent}%` }}
+                                />
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs text-gray-500">
+                                <span>{progress.message}</span>
+                                <span>{progress.percent}%</span>
+                            </div>
+
+                            {progress.stage === 'downloading' && (
+                                <div className="flex items-center justify-between text-xs text-gray-400 mt-2">
+                                    <span>
+                                        {formatBytes(progress.downloadedBytes || 0)}
+                                        {progress.totalBytes ? ` / ${formatBytes(progress.totalBytes)}` : ''}
+                                    </span>
+                                    <span>{formatSpeed(progress.speed || 0)}</span>
+                                </div>
+                            )}
+
+                            {isError && progress.error && (
+                                <div className="mt-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                                    <p className="text-xs text-red-600 dark:text-red-400">{progress.error}</p>
+                                </div>
+                            )}
+                        </div>
                     )}
-                </button>
 
-                {(isDone || isError) && (
-                    <button
-                        onClick={handleReset}
-                        className="btn btn-ghost px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                    >
-                        重置
-                    </button>
-                )}
+                    {/* 操作按钮 */}
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={handleInstall}
+                            disabled={!selectedLink || !!isActive || installing}
+                            className={`
+                                btn px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
+                                flex items-center gap-2
+                                ${!selectedLink || isActive || installing
+                                    ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                                    : 'bg-primary text-white hover:opacity-90 shadow-md hover:shadow-lg'
+                                }
+                            `}
+                        >
+                            {installing || isActive ? (
+                                <>
+                                    <div className="loading-spinner !w-4 !h-4 !border-[1.5px] !border-current" />
+                                    安装中...
+                                </>
+                            ) : (
+                                <>
+                                    <IconDownload size={15} />
+                                    覆盖安装
+                                </>
+                            )}
+                        </button>
 
-                {versionData?.releaseUrl && (
-                    <a
-                        href={versionData.releaseUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn btn-ghost px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 no-underline"
-                    >
-                        查看 Release →
-                    </a>
-                )}
-            </div>
+                        {(isDone || isError) && (
+                            <button
+                                onClick={handleReset}
+                                className="btn btn-ghost px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                            >
+                                重置
+                            </button>
+                        )}
 
-            {/* 提示信息 */}
-            <div className="card p-4 bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800">
-                <div className="flex items-start gap-2">
-                    <IconInfo size={14} className="text-blue-400 mt-0.5 flex-shrink-0" />
-                    <div className="text-xs text-blue-600 dark:text-blue-400 space-y-1">
-                        <p>• 覆盖安装会将新版本 QQ 安装到当前 QQ 所在目录，安装完成后需要<strong>重启 NapCat</strong> 才能生效。</p>
-                        <p>• Windows 平台使用静默安装模式，Linux 平台使用 dpkg 安装 deb 包。</p>
-                        <p>• 安装过程中请勿关闭页面，否则可能导致安装中断。</p>
+                        {versionData?.releaseUrl && (
+                            <a
+                                href={versionData.releaseUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn btn-ghost px-4 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 no-underline"
+                            >
+                                查看 Release →
+                            </a>
+                        )}
+                    </div>
+
+                    {/* 提示信息 */}
+                    <div className="card p-4 bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800">
+                        <div className="flex items-start gap-2">
+                            <IconInfo size={14} className="text-blue-400 mt-0.5 flex-shrink-0" />
+                            <div className="text-xs text-blue-600 dark:text-blue-400 space-y-1">
+                                <p>• 覆盖安装会将新版本 QQ 安装到当前 QQ 所在目录，安装完成后需要<strong>重启 NapCat</strong> 才能生效。</p>
+                                <p>• Linux 平台使用 dpkg/rpm 安装对应格式的安装包，请确保选择与系统匹配的格式。</p>
+                                <p>• 安装过程中请勿关闭页面，否则可能导致安装中断。</p>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* ==================== 未知平台 ==================== */}
+            {!autoInstallSupported && !isWindows && !isMac && currentPlatform && (
+                <div className="card p-4 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
+                    <div className="flex items-start gap-2">
+                        <IconAlert size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                        <div className="text-xs text-amber-700 dark:text-amber-300">
+                            <p>当前平台 ({currentPlatform}) 暂不支持自动安装，请前往 Release 页面手动下载安装。</p>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     )
 }
