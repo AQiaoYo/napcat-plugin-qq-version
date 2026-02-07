@@ -310,7 +310,31 @@ function detectFormat(url: string): QQDownloadLink['format'] {
 }
 
 /**
+ * 检测 Linux 包安装器类型（参考 NapCat-Installer 的 detect_package_manager）
+ * dpkg → 应使用 .deb 包
+ * rpm  → 应使用 .rpm 包
+ */
+function detectPreferredFormat(): 'deb' | 'rpm' | null {
+    if (process.platform !== 'linux') return null;
+    try {
+        const { execSync } = require('child_process');
+        try {
+            execSync('which dpkg', { stdio: 'ignore' });
+            return 'deb';
+        } catch { /* ignore */ }
+        try {
+            execSync('which rpm', { stdio: 'ignore' });
+            return 'rpm';
+        } catch { /* ignore */ }
+    } catch { /* ignore */ }
+    return null;
+}
+
+/**
  * 获取与当前平台匹配的下载链接
+ * 参考 NapCat-Installer：根据系统包管理器自动选择最合适的单个安装包
+ * - Linux: 检测 dpkg/rpm，只返回对应格式的包
+ * - Windows/Mac: 返回对应平台的包
  */
 export function filterLinksForCurrentPlatform(links: QQDownloadLink[]): QQDownloadLink[] {
     const { platform, arch } = getCurrentPlatform();
@@ -327,12 +351,36 @@ export function filterLinksForCurrentPlatform(links: QQDownloadLink[]): QQDownlo
     if (arch === 'x64' || arch === 'x86_64') targetArch = 'x64';
     else if (arch === 'arm64' || arch === 'aarch64') targetArch = 'arm64';
 
-    return links.filter(link => {
+    // 先按平台和架构过滤
+    let filtered = links.filter(link => {
         if (link.platform !== targetPlatform) return false;
-        // 如果架构已知，也要匹配
         if (targetArch !== 'unknown' && link.arch !== 'unknown' && link.arch !== targetArch) return false;
         return true;
     });
+
+    // Linux 平台：根据包管理器自动选择最合适的格式，只返回一个
+    if (targetPlatform === 'linux' && filtered.length > 1) {
+        const preferredFormat = detectPreferredFormat();
+        if (preferredFormat) {
+            const preferred = filtered.filter(link => link.format === preferredFormat);
+            if (preferred.length > 0) {
+                filtered = [preferred[0]];
+            } else {
+                // 没有匹配的格式，取第一个
+                filtered = [filtered[0]];
+            }
+        } else {
+            // 无法检测包管理器，默认取第一个
+            filtered = [filtered[0]];
+        }
+    }
+
+    // Windows/Mac 也只返回最合适的一个
+    if ((targetPlatform === 'windows' || targetPlatform === 'mac') && filtered.length > 1) {
+        filtered = [filtered[0]];
+    }
+
+    return filtered;
 }
 
 /**

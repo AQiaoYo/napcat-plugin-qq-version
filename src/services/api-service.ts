@@ -112,12 +112,49 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
             if (!result) {
                 return res.status(502).json({ code: -1, message: '获取 Release 信息失败' });
             }
+
+            // 检测当前 QQ 版本是否已经满足推荐版本要求
+            // 参考 NapCat-Installer 的 compare_linuxqq_versions 逻辑：
+            // 当前版本 >= 推荐版本 时，无需安装
+            let isAlreadyInstalled = false;
+            if (recommended.length > 0 && result.currentQQVersion && result.currentQQVersion !== 'unknown') {
+                const url = recommended[0].url;
+                // 从 URL 解析目标版本号
+                // linuxqq_3.2.25-45758_amd64.deb → 3.2.25
+                // QQ9.9.26.44343_x64.exe → 9.9.26
+                const linuxMatch = url.match(/linuxqq_([\d.]+)-/);
+                const winMatch = url.match(/QQ([\d.]+)\./i);
+                const macMatch = url.match(/QQ[_v]*([\d.]+)/i);
+                const targetVer = linuxMatch?.[1] || winMatch?.[1] || macMatch?.[1] || '';
+
+                if (targetVer) {
+                    // 将版本号拆分为数字段进行逐段比较
+                    const currentParts = result.currentQQVersion.split(/[.\-]/).map(Number);
+                    const targetParts = targetVer.split(/[.\-]/).map(Number);
+                    const len = Math.max(currentParts.length, targetParts.length);
+
+                    let cmp = 0; // 0=相等, 1=当前更大, -1=当前更小
+                    for (let i = 0; i < len; i++) {
+                        const cur = currentParts[i] || 0;
+                        const tgt = targetParts[i] || 0;
+                        if (cur > tgt) { cmp = 1; break; }
+                        if (cur < tgt) { cmp = -1; break; }
+                    }
+
+                    // 当前版本 >= 推荐版本，无需安装
+                    if (cmp >= 0) {
+                        isAlreadyInstalled = true;
+                    }
+                }
+            }
+
             res.json({
                 code: 0,
                 data: {
                     ...result,
                     downloadLinks: recommended,
-                    platform: getCurrentPlatform()
+                    platform: getCurrentPlatform(),
+                    isAlreadyInstalled
                 }
             });
         } catch (e) {

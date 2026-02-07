@@ -57,6 +57,7 @@ export interface VersionMatchResult {
 
 export interface VersionRecommended extends VersionMatchResult {
     platform: { platform: string; arch: string }
+    isAlreadyInstalled: boolean
 }
 
 export interface QQInstallInfo {
