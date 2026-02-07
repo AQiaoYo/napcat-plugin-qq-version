@@ -1,71 +1,72 @@
-import { useState, useEffect } from 'react'
-import Sidebar from './components/Sidebar'
-import Header from './components/Header'
+import { useState } from 'react'
 import ToastContainer from './components/ToastContainer'
-import StatusPage from './pages/StatusPage'
-import ConfigPage from './pages/ConfigPage'
-import GroupsPage from './pages/GroupsPage'
 import InstallPage from './pages/InstallPage'
-import { useStatus } from './hooks/useStatus'
+import ConfigPage from './pages/ConfigPage'
 import { useTheme } from './hooks/useTheme'
+import { IconPackage, IconSettings, IconGithub } from './components/icons'
 
-export type PageId = 'status' | 'config' | 'groups' | 'install'
+export type PageId = 'install' | 'config'
 
-const pageConfig: Record<PageId, { title: string; desc: string }> = {
-    status: { title: '仪表盘', desc: '插件运行状态与数据概览' },
-    config: { title: '插件配置', desc: '基础设置与参数配置' },
-    groups: { title: '群管理', desc: '管理群的启用与禁用' },
-    install: { title: 'QQ 安装', desc: '覆盖安装匹配版本的 QQ' },
-}
+const tabs: { id: PageId; label: string; icon: React.ReactNode }[] = [
+    { id: 'install', label: 'QQ 版本管理', icon: <IconPackage size={15} /> },
+    { id: 'config', label: '设置', icon: <IconSettings size={15} /> },
+]
 
 function App() {
-    const [currentPage, setCurrentPage] = useState<PageId>('status')
-    const [isScrolled, setIsScrolled] = useState(false)
-    const { status, fetchStatus } = useStatus()
-
+    const [currentPage, setCurrentPage] = useState<PageId>('install')
     useTheme()
 
-    useEffect(() => {
-        fetchStatus()
-        const interval = setInterval(fetchStatus, 5000)
-        return () => clearInterval(interval)
-    }, [fetchStatus])
-
-    const handleScroll = (e: React.UIEvent<HTMLElement>) => {
-        setIsScrolled(e.currentTarget.scrollTop > 10)
-    }
-
-    const renderPage = () => {
-        switch (currentPage) {
-            case 'status': return <StatusPage status={status} onRefresh={fetchStatus} />
-            case 'config': return <ConfigPage />
-            case 'groups': return <GroupsPage />
-            case 'install': return <InstallPage />
-            default: return <StatusPage status={status} onRefresh={fetchStatus} />
-        }
-    }
-
     return (
-        <div className="flex h-screen overflow-hidden bg-[#f8f9fa] dark:bg-[#18191C] text-gray-800 dark:text-gray-200 transition-colors duration-300">
+        <div className="min-h-screen bg-gray-50 dark:bg-[#0f0f11] text-gray-800 dark:text-gray-200 transition-colors duration-300">
             <ToastContainer />
-            <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
 
-            <div className="flex-1 flex flex-col overflow-hidden">
-                <main className="flex-1 overflow-y-auto" onScroll={handleScroll}>
-                    <Header
-                        title={pageConfig[currentPage].title}
-                        description={pageConfig[currentPage].desc}
-                        isScrolled={isScrolled}
-                        status={status}
-                        currentPage={currentPage}
-                    />
-                    <div className="px-4 md:px-8 pb-8">
-                        <div key={currentPage} className="page-enter">
-                            {renderPage()}
+            {/* 顶部导航栏 */}
+            <header className="sticky top-0 z-30 bg-white/80 dark:bg-[#18181b]/80 backdrop-blur-xl border-b border-gray-200/60 dark:border-white/[0.06]">
+                <div className="max-w-5xl mx-auto px-4 sm:px-6">
+                    <div className="flex items-center justify-between h-14">
+                        <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white shadow-sm shadow-brand-500/20">
+                                <IconPackage size={14} />
+                            </div>
+                            <span className="font-bold text-sm text-gray-900 dark:text-white tracking-tight">QQ Version</span>
                         </div>
+
+                        <nav className="flex items-center bg-gray-100/80 dark:bg-white/[0.06] rounded-lg p-0.5">
+                            {tabs.map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setCurrentPage(tab.id)}
+                                    className={`
+                                        relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200 cursor-pointer
+                                        ${currentPage === tab.id
+                                            ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm'
+                                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                                        }
+                                    `}
+                                >
+                                    {tab.icon}
+                                    <span className="hidden sm:inline">{tab.label}</span>
+                                </button>
+                            ))}
+                        </nav>
+
+                        <a
+                            href="https://github.com/AQiaoYo/napcat-plugin-qq-version"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.06] transition-all no-underline"
+                        >
+                            <IconGithub size={16} />
+                        </a>
                     </div>
-                </main>
-            </div>
+                </div>
+            </header>
+
+            <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+                <div key={currentPage} className="page-enter">
+                    {currentPage === 'install' ? <InstallPage /> : <ConfigPage />}
+                </div>
+            </main>
         </div>
     )
 }
