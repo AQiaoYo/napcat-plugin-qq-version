@@ -5,6 +5,7 @@ node_modules/
 dist/
 
 # IDE
+.example
 .vscode/*
 !.vscode/mcp.json
 .idea/
