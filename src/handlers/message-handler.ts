@@ -7,6 +7,13 @@ import type { OB11Message } from 'napcat-types/napcat-onebot';
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { pluginState } from '../core/state';
 import type { MessageSegment, ForwardNode } from '../types';
+import {
+    getVersionMatchResult,
+    getRecommendedLinks,
+    getCurrentQQInfo,
+    getNapCatVersion,
+    clearCache
+} from '../services/github-service';
 
 // ==================== CD 冷却管理 ====================
 
@@ -263,8 +270,11 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
             case 'help': {
                 // 帮助命令
                 const helpText = [
-                    `📖 插件帮助`,
+                    `📖 QQ版本查询插件帮助`,
                     `${prefix} help - 显示帮助信息`,
+                    `${prefix} ver - 查看当前版本信息`,
+                    `${prefix} qq - 查询推荐QQ版本下载链接`,
+                    `${prefix} qqall - 查询所有平台QQ下载链接`,
                     `${prefix} ping - 测试连通性`,
                     `${prefix} status - 查看运行状态`,
                 ].join('\n');
@@ -277,6 +287,187 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
                 } else if (messageType === 'private') {
                     await sendPrivateMessage(ctx, userId, [textSegment(helpText)]);
                 }
+                break;
+            }
+
+            case 'ver': {
+                // 查看当前版本信息
+                const qqInfo = getCurrentQQInfo(ctx);
+                const verText = [
+                    `📋 当前版本信息`,
+                    `NapCat 版本: ${getNapCatVersion()}`,
+                    `QQ 版本: ${qqInfo.version}`,
+                    `QQ Build: ${qqInfo.build}`,
+                ].join('\n');
+
+                if (messageType === 'group' && groupId) {
+                    await sendGroupMessage(ctx, groupId, [
+                        replySegment(messageId),
+                        textSegment(verText)
+                    ]);
+                } else if (messageType === 'private') {
+                    await sendPrivateMessage(ctx, userId, [textSegment(verText)]);
+                }
+                pluginState.incrementProcessedCount();
+                break;
+            }
+
+            case 'qq': {
+                // 查询当前平台推荐的 QQ 版本下载链接
+                if (messageType === 'group' && groupId) {
+                    const remaining = getCooldownRemaining(groupId, 'qq');
+                    if (remaining > 0) {
+                        await sendGroupMessage(ctx, groupId, [
+                            replySegment(messageId),
+                            textSegment(`⏳ 请等待 ${remaining} 秒后再试`)
+                        ]);
+                        return;
+                    }
+                }
+
+                try {
+                    const { result, recommended } = await getRecommendedLinks(ctx);
+                    if (!result) {
+                        const errMsg = '❌ 获取版本信息失败，请稍后再试';
+                        if (messageType === 'group' && groupId) {
+                            await sendGroupMessage(ctx, groupId, [replySegment(messageId), textSegment(errMsg)]);
+                        } else if (messageType === 'private') {
+                            await sendPrivateMessage(ctx, userId, [textSegment(errMsg)]);
+                        }
+                        return;
+                    }
+
+                    const lines: string[] = [
+                        `📦 NapCat ${result.releaseTag} 推荐QQ版本`,
+                        `当前QQ: ${result.currentQQVersion} (Build: ${result.currentQQBuild})`,
+                    ];
+
+                    if (result.versionWarning) {
+                        lines.push(`⚠️ ${result.versionWarning}`);
+                    }
+
+                    if (recommended.length > 0) {
+                        lines.push('', '🔗 当前平台推荐下载:');
+                        for (const link of recommended) {
+                            lines.push(`  ${link.label}`);
+                            lines.push(`  ${link.url}`);
+                        }
+                    } else {
+                        lines.push('', '⚠️ 未找到当前平台的下载链接，请使用 qqall 查看所有平台');
+                    }
+
+                    const qqText = lines.join('\n');
+                    if (messageType === 'group' && groupId) {
+                        await sendGroupMessage(ctx, groupId, [replySegment(messageId), textSegment(qqText)]);
+                        setCooldown(groupId, 'qq');
+                    } else if (messageType === 'private') {
+                        await sendPrivateMessage(ctx, userId, [textSegment(qqText)]);
+                    }
+                } catch (e) {
+                    pluginState.log('error', '查询QQ版本失败:', e);
+                    const errMsg = '❌ 查询失败，请稍后再试';
+                    if (messageType === 'group' && groupId) {
+                        await sendGroupMessage(ctx, groupId, [replySegment(messageId), textSegment(errMsg)]);
+                    } else if (messageType === 'private') {
+                        await sendPrivateMessage(ctx, userId, [textSegment(errMsg)]);
+                    }
+                }
+                pluginState.incrementProcessedCount();
+                break;
+            }
+
+            case 'qqall': {
+                // 查询所有平台 QQ 版本下载链接
+                if (messageType === 'group' && groupId) {
+                    const remaining = getCooldownRemaining(groupId, 'qqall');
+                    if (remaining > 0) {
+                        await sendGroupMessage(ctx, groupId, [
+                            replySegment(messageId),
+                            textSegment(`⏳ 请等待 ${remaining} 秒后再试`)
+                        ]);
+                        return;
+                    }
+                }
+
+                try {
+                    const result = await getVersionMatchResult(ctx);
+                    if (!result) {
+                        const errMsg = '❌ 获取版本信息失败，请稍后再试';
+                        if (messageType === 'group' && groupId) {
+                            await sendGroupMessage(ctx, groupId, [replySegment(messageId), textSegment(errMsg)]);
+                        } else if (messageType === 'private') {
+                            await sendPrivateMessage(ctx, userId, [textSegment(errMsg)]);
+                        }
+                        return;
+                    }
+
+                    const lines: string[] = [
+                        `📦 NapCat ${result.releaseTag} 全平台QQ下载`,
+                        `当前QQ: ${result.currentQQVersion} (Build: ${result.currentQQBuild})`,
+                    ];
+
+                    if (result.versionWarning) {
+                        lines.push(`⚠️ ${result.versionWarning}`);
+                    }
+
+                    // 按平台分组
+                    const grouped: Record<string, typeof result.downloadLinks> = {};
+                    for (const link of result.downloadLinks) {
+                        const key = link.platform === 'windows' ? '🪟 Windows'
+                            : link.platform === 'linux' ? '🐧 Linux'
+                                : link.platform === 'mac' ? '🍎 macOS'
+                                    : '❓ 其他';
+                        if (!grouped[key]) grouped[key] = [];
+                        grouped[key].push(link);
+                    }
+
+                    for (const [platform, links] of Object.entries(grouped)) {
+                        lines.push('', `${platform}:`);
+                        for (const link of links) {
+                            lines.push(`  ${link.label}`);
+                            lines.push(`  ${link.url}`);
+                        }
+                    }
+
+                    lines.push('', `🔗 Release: ${result.releaseUrl}`);
+
+                    const allText = lines.join('\n');
+
+                    // 内容较长，群聊使用合并转发
+                    if (messageType === 'group' && groupId) {
+                        if (allText.length > 500) {
+                            const nodes: ForwardNode[] = [];
+                            // 分段发送
+                            const header = lines.slice(0, 3).join('\n');
+                            nodes.push(buildForwardNode(String(ctx.core.selfInfo.uin || userId), 'QQ版本助手', [textSegment(header)]));
+
+                            for (const [platform, links] of Object.entries(grouped)) {
+                                const platformLines = [`${platform}:`];
+                                for (const link of links) {
+                                    platformLines.push(`${link.label}`);
+                                    platformLines.push(`${link.url}`);
+                                }
+                                nodes.push(buildForwardNode(String(ctx.core.selfInfo.uin || userId), 'QQ版本助手', [textSegment(platformLines.join('\n'))]));
+                            }
+
+                            await sendGroupForwardMsg(ctx, groupId, nodes);
+                        } else {
+                            await sendGroupMessage(ctx, groupId, [replySegment(messageId), textSegment(allText)]);
+                        }
+                        setCooldown(groupId, 'qqall');
+                    } else if (messageType === 'private') {
+                        await sendPrivateMessage(ctx, userId, [textSegment(allText)]);
+                    }
+                } catch (e) {
+                    pluginState.log('error', '查询全平台QQ版本失败:', e);
+                    const errMsg = '❌ 查询失败，请稍后再试';
+                    if (messageType === 'group' && groupId) {
+                        await sendGroupMessage(ctx, groupId, [replySegment(messageId), textSegment(errMsg)]);
+                    } else if (messageType === 'private') {
+                        await sendPrivateMessage(ctx, userId, [textSegment(errMsg)]);
+                    }
+                }
+                pluginState.incrementProcessedCount();
                 break;
             }
 
