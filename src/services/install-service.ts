@@ -199,6 +199,93 @@ function isRootlessMode(): boolean {
     return fs.existsSync(qqPath) || fs.existsSync(packageJsonPath);
 }
 
+// ==================== 非入侵式模式检测 ====================
+
+/**
+ * 检测当前是否为非入侵式启动模式
+ * 非入侵式模式通过 LD_PRELOAD=libnapcat_launcher.so 注入 NapCat，
+ * 不修改 QQ 的 package.json 和 loadNapCat.js。
+ * 
+ * 检测方式：
+ * 1. 检查 LD_PRELOAD 环境变量是否包含 libnapcat_launcher
+ * 2. 检查 NapCat 所在目录（cwd 或 napcat 同级）是否存在 libnapcat_launcher.so
+ * 3. 检查 /opt/QQ 存在但 package.json 的 main 未被修改为 loadNapCat.js
+ */
+function isNonInvasiveMode(): boolean {
+    if (isDocker()) return false;
+    if (isRootlessMode()) return false;
+
+    try {
+        // 方式1: 检查 LD_PRELOAD 环境变量
+        const ldPreload = process.env.LD_PRELOAD || '';
+        if (ldPreload.includes('libnapcat_launcher')) {
+            return true;
+        }
+
+        // 方式2: 检查 cwd 或 napcat 同级目录下是否存在 libnapcat_launcher.so
+        const cwd = process.cwd();
+        const possibleSoPaths = [
+            path.join(cwd, 'libnapcat_launcher.so'),
+            path.join(cwd, '..', 'libnapcat_launcher.so'),
+        ];
+
+        // 如果 configPath 可用，也检查其附近
+        if (pluginState.dataPath) {
+            possibleSoPaths.push(
+                path.join(pluginState.dataPath, '..', '..', 'libnapcat_launcher.so'),
+                path.join(pluginState.dataPath, '..', '..', '..', 'libnapcat_launcher.so'),
+            );
+        }
+
+        for (const soPath of possibleSoPaths) {
+            try {
+                if (fs.existsSync(soPath)) {
+                    return true;
+                }
+            } catch { /* ignore */ }
+        }
+
+        // 方式3: 检查 /opt/QQ 存在但 package.json 的 main 未指向 loadNapCat.js
+        // 这说明 QQ 是系统级安装的，但没有被入侵式修改
+        const systemPackageJson = '/opt/QQ/resources/app/package.json';
+        if (fs.existsSync(systemPackageJson)) {
+            try {
+                const pkgContent = JSON.parse(fs.readFileSync(systemPackageJson, 'utf-8'));
+                // 如果 main 不是 loadNapCat.js，说明没有被入侵式修改
+                // 同时 NapCat 正在运行（因为插件能加载），所以一定是非入侵式
+                if (pkgContent.main && !pkgContent.main.includes('loadNapCat')) {
+                    return true;
+                }
+            } catch { /* ignore */ }
+        }
+
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+/** 缓存非入侵式检测结果 */
+let _isNonInvasive: boolean | null = null;
+function isNonInvasive(): boolean {
+    if (_isNonInvasive === null) {
+        _isNonInvasive = isNonInvasiveMode();
+    }
+    return _isNonInvasive;
+}
+
+/**
+ * 获取当前 NapCat 启动模式
+ */
+function getLaunchMode(): import('../types').LaunchMode {
+    if (isDocker()) return 'docker';
+    if (isNonInvasive()) return 'non-invasive';
+    if (isRootlessMode()) return 'invasive';
+    // 系统级安装且 package.json 被修改也是入侵式
+    if (process.platform === 'linux') return 'invasive';
+    return 'unknown';
+}
+
 /**
  * 从下载链接 URL 中解析 QQ 版本号
  * 例如: https://dldir1.qq.com/qqfile/qq/QQNT/xxx/linuxqq_3.2.25-45758_amd64.deb
@@ -391,6 +478,7 @@ export function getQQInstallInfo(ctx: NapCatPluginContext): QQInstallInfo {
         arch,
         isRootless: platform === 'linux' ? isRootlessMode() : false,
         isDocker: isDocker(),
+        launchMode: getLaunchMode(),
     };
 }
 
@@ -743,23 +831,22 @@ async function installOnLinuxSystem(link: QQDownloadLink): Promise<void> {
         const sudo = sudoPrefix();
 
         if (link.format === 'deb') {
-            if (packageManager === 'apt-get') {
-                pluginState.log('info', '使用 apt-get 安装 deb 包...');
-                execSync(`${sudo}apt-get install -f -y "${pkgFilePath}"`, {
-                    stdio: 'pipe',
-                    timeout: 300000,
-                });
-            } else {
-                pluginState.log('info', '使用 dpkg 安装 deb 包...');
+            // 始终使用 dpkg -i 安装 deb 包，再用 apt-get -f 修复依赖
+            // 不能直接 apt-get install "path.deb"，因为 NapCat 进程输出会干扰 apt 的 file method 通信
+            pluginState.log('info', '使用 dpkg -i 安装 deb 包...');
+            try {
                 execSync(`${sudo}dpkg -i "${pkgFilePath}"`, {
                     stdio: 'pipe',
                     timeout: 300000,
                 });
+            } catch (e) {
+                // dpkg -i 可能因依赖缺失返回非零退出码，这是正常的
+                pluginState.log('info', 'dpkg -i 完成（可能有依赖警告，将通过 apt-get -f 修复）');
             }
             updateProgress('installing', 80, 'deb 包安装完成');
 
-            // 安装依赖
-            updateProgress('installing', 85, '正在安装依赖...');
+            // 修复依赖
+            updateProgress('installing', 85, '正在修复依赖...');
             try {
                 if (packageManager === 'apt-get') {
                     execSync(`${sudo}apt-get install -y -f`, { stdio: 'pipe', timeout: 120000 });
@@ -814,6 +901,174 @@ async function installOnLinuxSystem(link: QQDownloadLink): Promise<void> {
 
     } catch (err) {
         // 清理临时文件（使用 shell rm -rf 避免 .asar 问题）
+        try {
+            execSync(`rm -rf "${tmpDir}"`, { stdio: 'ignore' });
+        } catch { /* ignore */ }
+
+        const errMsg = err instanceof Error ? err.message : String(err);
+        updateProgress('error', 0, '安装失败', { error: errMsg });
+        throw err;
+    }
+}
+
+// ==================== 非入侵式安装逻辑 ====================
+
+/**
+ * 在非入侵式模式下安装/更新 QQ
+ * 参考 napcat-linux-installer 项目
+ * 
+ * 非入侵式模式特点：
+ * - QQ 通过系统包管理器安装在 /opt/QQ（dpkg -i / dnf install）
+ * - NapCat 在当前工作目录的 ./napcat/ 下
+ * - 通过 LD_PRELOAD=./libnapcat_launcher.so qq 启动
+ * - 不修改 QQ 的 package.json 和 loadNapCat.js
+ * 
+ * 安装流程（与系统级安装相同，但不需要修补 NapCat 启动配置）：
+ * 1. 下载 deb/rpm 包
+ * 2. 使用 apt-get/dnf/dpkg 安装
+ * 3. 更新版本配置
+ * （无需修补 package.json / loadNapCat.js，因为非入侵式不依赖它们）
+ */
+async function installOnLinuxNonInvasive(link: QQDownloadLink): Promise<void> {
+    const arch = getSystemArch();
+    if (arch === 'unknown') {
+        throw new Error('不支持的系统架构');
+    }
+
+    const packageInstaller = detectPackageInstaller();
+    const packageManager = detectPackageManager();
+
+    // 验证下载链接格式与当前系统匹配
+    if (link.format === 'deb' && packageInstaller !== 'dpkg') {
+        throw new Error('当前系统不支持 deb 包安装（未检测到 dpkg）');
+    }
+    if (link.format === 'rpm' && packageInstaller !== 'rpm') {
+        throw new Error('当前系统不支持 rpm 包安装（未检测到 rpm）');
+    }
+    if (link.format !== 'deb' && link.format !== 'rpm') {
+        throw new Error(`不支持的安装包格式: ${link.format}，Linux 仅支持 deb/rpm`);
+    }
+
+    const tmpDir = '/tmp/napcat-qq-install';
+    const pkgFileName = link.format === 'deb' ? 'QQ.deb' : 'QQ.rpm';
+    const pkgFilePath = path.join(tmpDir, pkgFileName);
+
+    // 从 URL 中解析版本号
+    const targetVersion = parseVersionFromUrl(link.url);
+
+    try {
+        // 创建临时目录
+        if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+        }
+
+        // ===== 阶段1: 下载 =====
+        updateProgress('downloading', 5, '开始下载 QQ 安装包 (非入侵式)...', {
+            downloadedBytes: 0,
+            totalBytes: 0,
+            speed: 0,
+        });
+
+        await downloadFile(link.url, pkgFilePath, (downloaded, total, speed) => {
+            const percent = total > 0 ? Math.min(Math.round((downloaded / total) * 50) + 5, 55) : 10;
+            updateProgress('downloading', percent, '正在下载 QQ 安装包...', {
+                downloadedBytes: downloaded,
+                totalBytes: total,
+                speed,
+            });
+        });
+
+        // 验证文件是否下载成功
+        if (!fs.existsSync(pkgFilePath)) {
+            throw new Error('安装包下载失败：文件不存在');
+        }
+
+        const fileStats = fs.statSync(pkgFilePath);
+        if (fileStats.size < 1024 * 100) {
+            throw new Error('安装包下载失败：文件过小，可能下载不完整');
+        }
+
+        updateProgress('downloading', 55, '下载完成');
+
+        // ===== 阶段2: 安装 =====
+        updateProgress('installing', 60, '正在安装 QQ (非入侵式，不修改 QQ 启动配置)...');
+
+        const sudo = sudoPrefix();
+
+        if (link.format === 'deb') {
+            // 始终使用 dpkg -i 安装 deb 包，再用 apt-get -f 修复依赖
+            // 不能直接 apt-get install "path.deb"，因为 NapCat 进程输出会干扰 apt 的 file method 通信
+            pluginState.log('info', '[非入侵式] 使用 dpkg -i 安装 deb 包...');
+            try {
+                execSync(`${sudo}dpkg -i "${pkgFilePath}"`, {
+                    stdio: 'pipe',
+                    timeout: 300000,
+                });
+            } catch (e) {
+                // dpkg -i 可能因依赖缺失返回非零退出码，这是正常的
+                pluginState.log('info', '[非入侵式] dpkg -i 完成（可能有依赖警告，将通过 apt-get -f 修复）');
+            }
+            updateProgress('installing', 80, 'deb 包安装完成');
+
+            // 修复依赖
+            updateProgress('installing', 85, '正在修复依赖...');
+            try {
+                if (packageManager === 'apt-get') {
+                    execSync(`${sudo}apt-get install -y -f`, { stdio: 'pipe', timeout: 120000 });
+                    try {
+                        execSync(`${sudo}apt-get install -y libnss3 libgbm1`, { stdio: 'pipe', timeout: 60000 });
+                    } catch { /* 非关键依赖，忽略 */ }
+                    try {
+                        execSync(`${sudo}apt-get install -y libasound2 || ${sudo}apt-get install -y libasound2t64`, { stdio: 'pipe', timeout: 60000 });
+                    } catch { /* 非关键依赖，忽略 */ }
+                }
+            } catch (e) {
+                pluginState.log('warn', '[非入侵式] 安装依赖时出现警告:', e);
+            }
+        } else if (link.format === 'rpm') {
+            if (packageManager === 'dnf') {
+                pluginState.log('info', '[非入侵式] 使用 dnf 安装 rpm 包...');
+                execSync(`${sudo}dnf localinstall -y "${pkgFilePath}"`, {
+                    stdio: 'pipe',
+                    timeout: 300000,
+                });
+            } else {
+                pluginState.log('info', '[非入侵式] 使用 rpm 安装 rpm 包...');
+                execSync(`${sudo}rpm -Uvh --force "${pkgFilePath}"`, {
+                    stdio: 'pipe',
+                    timeout: 300000,
+                });
+            }
+            updateProgress('installing', 85, 'rpm 包安装完成');
+        }
+
+        // ===== 阶段3: 更新版本配置 =====
+        // 非入侵式模式不需要修补 package.json 和 loadNapCat.js
+        pluginState.log('info', '[非入侵式] 无需修补 QQ 启动配置（LD_PRELOAD 模式不依赖 loadNapCat.js）');
+
+        updateProgress('installing', 88, '正在更新版本配置...');
+        if (targetVersion) {
+            updateLinuxQQConfig(targetVersion);
+        }
+
+        updateProgress('installing', 90, '正在清理临时文件...');
+
+        // 清理
+        try {
+            execSync(`rm -rf "${tmpDir}"`, { stdio: 'ignore' });
+        } catch {
+            // 清理失败不影响安装结果
+        }
+
+        // ===== 阶段4: 完成 =====
+        updateProgress('done', 100, 'QQ 安装完成！重启 NapCat 后生效。', {
+            finishedAt: Date.now(),
+        });
+
+        pluginState.log('info', '[非入侵式] QQ 系统级安装完成（LD_PRELOAD 模式）');
+
+    } catch (err) {
+        // 清理临时文件
         try {
             execSync(`rm -rf "${tmpDir}"`, { stdio: 'ignore' });
         } catch { /* ignore */ }
@@ -1009,8 +1264,9 @@ async function installOnDocker(link: QQDownloadLink): Promise<void> {
 /**
  * 开始安装 QQ
  * - Docker: dpkg -x 解压覆盖 /opt/QQ + 修补 loadNapCat.js + 更新版本配置
- * - Linux (rootless): dpkg -x 解压到 ~/Napcat/ + 更新版本配置
- * - Linux (系统级): apt-get/dnf 安装 + 更新版本配置
+ * - 非入侵式: apt-get/dnf 安装到 /opt/QQ + 更新版本配置（不修补启动配置）
+ * - Linux (rootless 入侵式): dpkg -x 解压到 ~/Napcat/ + 修补启动配置 + 更新版本配置
+ * - Linux (系统级入侵式): apt-get/dnf 安装 + 更新版本配置
  * - Windows/Mac: 抛出错误，提示用户手动安装
  */
 export async function startInstall(ctx: NapCatPluginContext, link: QQDownloadLink): Promise<void> {
@@ -1037,16 +1293,20 @@ export async function startInstall(ctx: NapCatPluginContext, link: QQDownloadLin
 
     try {
         const docker = isDocker();
+        const nonInvasive = isNonInvasive();
         const rootless = isRootlessMode();
 
         if (docker) {
             pluginState.log('info', '安装模式: Docker (/opt/QQ + /app/napcat)');
             await installOnDocker(link);
+        } else if (nonInvasive) {
+            pluginState.log('info', '安装模式: 非入侵式 (LD_PRELOAD, /opt/QQ)');
+            await installOnLinuxNonInvasive(link);
         } else if (rootless) {
-            pluginState.log('info', '安装模式: Rootless (~/Napcat/)');
+            pluginState.log('info', '安装模式: Rootless 入侵式 (~/Napcat/)');
             await installOnLinuxRootless(link);
         } else {
-            pluginState.log('info', '安装模式: 系统级 (/opt/QQ/)');
+            pluginState.log('info', '安装模式: 系统级入侵式 (/opt/QQ/)');
             await installOnLinuxSystem(link);
         }
     } finally {
